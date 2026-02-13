@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Node/Frontend
+node_modules/
+dist/
+.vite/
+frontend/package-lock.json
+frontend/tsconfig.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-data/
+
+# Temp
+*.tmp
+temp/
+
+# Docs (intern)
+docs/
+
+# Claude Code
+.claude/
+CLAUDE.md

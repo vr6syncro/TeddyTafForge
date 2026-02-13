@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>TafForge</title>
+
+    <style>
+      :root {
+        --tc-bg: #fff;
+        --tc-fg: #1f2328;
+        --tc-muted: #667085;
+        --tc-border: #d0d7de;
+        --tc-primary: #1677ff;
+        --tc-bg-soft: #f6f8fa;
+      }
+      :root[data-tc-theme="dark"] {
+        --tc-bg: #0f1419;
+        --tc-fg: #e6e7ea;
+        --tc-muted: #9aa0a6;
+        --tc-border: #2b3138;
+        --tc-primary: #3b82f6;
+        --tc-bg-soft: #141b22;
+      }
+      html, body {
+        background: var(--tc-bg);
+        color: var(--tc-fg);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        margin: 0;
+        padding: 16px;
+      }
+      .ant-card {
+        background: var(--tc-bg);
+        border: 1px solid var(--tc-border);
+        border-radius: 10px;
+        padding: 24px;
+        max-width: 500px;
+        margin: 0 auto;
+        text-align: center;
+      }
+      .logo { width: 120px; height: 120px; border-radius: 16px; margin-bottom: 16px; }
+      h2 { margin: 0 0 12px; }
+      p { color: var(--tc-muted); margin: 0 0 20px; line-height: 1.6; }
+      .ant-btn-primary {
+        display: inline-block;
+        padding: 10px 28px;
+        background: var(--tc-primary);
+        color: #fff;
+        text-decoration: none;
+        border-radius: 8px;
+        border: none;
+        font-size: 1em;
+        cursor: pointer;
+      }
+      .ant-btn-primary:hover { opacity: 0.85; }
+      .info {
+        margin-top: 16px;
+        font-size: 0.85em;
+        color: var(--tc-muted);
+      }
+      code {
+        background: var(--tc-bg-soft);
+        padding: 2px 6px;
+        border-radius: 4px;
+        border: 1px solid var(--tc-border);
+      }
+    </style>
+
+    <!-- THEME ADAPTER (from TeddyCloud Plugin Template) -->
+    <script>
+      (function () {
+        var root = document.documentElement;
+        var setVars = function (bg, fg) {
+          if (!bg || !fg) return;
+          root.style.setProperty("--tc-bg", String(bg).trim());
+          root.style.setProperty("--tc-fg", String(fg).trim());
+          root.style.setProperty("--tc-border", "color-mix(in srgb, " + fg + " 20%, transparent)");
+          root.style.setProperty("--tc-bg-soft", "color-mix(in srgb, " + bg + " 92%, " + fg + " 8%)");
+        };
+        var rgbToL = function (rgb) {
+          var m = rgb && rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+          if (!m) return null;
+          return (0.2126 * +m[1] + 0.7152 * +m[2] + 0.0722 * +m[3]) / 255;
+        };
+        try {
+          var pdoc = window.parent && window.parent.document;
+          if (pdoc) {
+            var hostEl = pdoc.querySelector(".ant-layout-content") || pdoc.body;
+            if (hostEl) {
+              var cs = window.parent.getComputedStyle(hostEl);
+              var bg = cs.backgroundColor || "rgb(255,255,255)";
+              var fg = cs.color || "rgb(31,35,40)";
+              setVars(bg, fg);
+              var L = rgbToL(bg);
+              if (L != null) root.setAttribute("data-tc-theme", L < 0.5 ? "dark" : "light");
+            }
+          }
+        } catch (_) {}
+        var sq = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)");
+        if (sq && !root.hasAttribute("data-tc-theme"))
+          root.setAttribute("data-tc-theme", sq.matches ? "dark" : "light");
+        window.addEventListener("message", function (ev) {
+          var d = ev && ev.data;
+          if (d && d.type === "tc-theme" && (d.theme === "dark" || d.theme === "light"))
+            root.setAttribute("data-tc-theme", d.theme);
+          if (d && d.type === "tc-theme-vars" && d.bg && d.fg) setVars(d.bg, d.fg);
+        }, false);
+      })();
+    </script>
+  </head>
+  <body class="ant-typography">
+    <section class="ant-card">
+      <img src="logo.png" alt="TafForge" class="logo" />
+      <h2>TafForge</h2>
+      <p>Custom Tonie TAF Builder<br>Audio konvertieren, Metadaten verwalten, Cover und Labels erstellen.</p>
+      <a id="link" class="ant-btn-primary" href="#">TafForge oeffnen</a>
+    </section>
+
+    <script>
+      (function () {
+        var configuredUrl = "__TAFFORGE_URL__";
+        var configuredPort = "__TAFFORGE_PORT__";
+
+        var url;
+        if (configuredUrl && configuredUrl.indexOf("__") === -1) {
+          url = configuredUrl;
+        } else {
+          var port = (configuredPort && configuredPort.indexOf("__") === -1)
+            ? configuredPort
+            : "3000";
+          url = window.location.protocol + "//" + window.location.hostname + ":" + port;
+        }
+
+        document.getElementById("link").href = url;
+        document.getElementById("link").target = "_blank";
+      })();
+    </script>
+  </body>
+</html>

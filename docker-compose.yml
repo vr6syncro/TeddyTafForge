@@ -1,0 +1,42 @@
+services:
+  teddycloud:
+    image: ghcr.io/toniebox-reverse-engineering/teddycloud:latest
+    container_name: teddycloud
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - teddycloud_config:/teddycloud/config
+      - teddycloud_library:/teddycloud/library
+      - teddycloud_content:/teddycloud/data/content
+      - teddycloud_certs:/teddycloud/certs
+      - teddycloud_plugins:/teddycloud/data/www/plugins
+    restart: unless-stopped
+
+  teddytafforge:
+    image: ghcr.io/vr6syncro/teddytafforge:latest
+    # Zum selber bauen statt Pull: auskommentieren und 'build: .' einkommentieren
+    # build: .
+    container_name: teddytafforge
+    ports:
+      - "3000:3000"
+    volumes:
+      - teddycloud_config:/teddycloud/config
+      - teddycloud_library:/teddycloud/library
+      - teddycloud_content:/teddycloud/data/content
+      - teddycloud_plugins:/teddycloud/data/www/plugins
+    environment:
+      - TEDDYCLOUD_URL=http://teddycloud:80
+      - TAFFORGE_PORT=3000
+      # Optional: Volle URL wenn hinter Reverse Proxy
+      # - TAFFORGE_URL=https://tafforge.meinserver.de
+    depends_on:
+      - teddycloud
+    restart: unless-stopped
+
+volumes:
+  teddycloud_config:
+  teddycloud_library:
+  teddycloud_content:
+  teddycloud_certs:
+  teddycloud_plugins:

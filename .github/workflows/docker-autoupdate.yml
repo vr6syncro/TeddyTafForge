@@ -1,0 +1,90 @@
+name: Docker Autoupdate (yt-dlp)
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-autoupdate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve latest yt-dlp version from GitHub Releases
+        id: ytdlp
+        run: |
+          python - <<'PY'
+          import json, urllib.request
+          req = urllib.request.Request(
+              "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest",
+              headers={"Accept": "application/vnd.github+json"},
+          )
+          with urllib.request.urlopen(req, timeout=20) as r:
+              data = json.load(r)
+          tag = str(data.get("tag_name", "")).strip()
+          if not tag:
+              raise SystemExit("No tag_name in GitHub release response")
+          version = tag.lstrip("v")
+          print(f"version={version}")
+          with open("out.txt", "w", encoding="utf-8") as f:
+              f.write(version)
+          PY
+          echo "version=$(cat out.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if version tag already exists
+        id: check
+        run: |
+          TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:autoupdate-ytdlp-${{ steps.ytdlp.outputs.version }}"
+          if docker manifest inspect "$TAG" > /dev/null 2>&1; then
+            echo "build_needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build_needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract metadata
+        if: steps.check.outputs.build_needed == 'true'
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=autoupdate
+            type=raw,value=autoupdate-ytdlp-${{ steps.ytdlp.outputs.version }}
+            type=raw,value=autoupdate-${{ github.run_number }}
+          labels: |
+            org.opencontainers.image.title=TafForge
+            org.opencontainers.image.description=Autoupdate image with newest yt-dlp
+            org.opencontainers.image.version=yt-dlp-${{ steps.ytdlp.outputs.version }}
+
+      - name: Build and push autoupdate tags
+        if: steps.check.outputs.build_needed == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            YTDLP_VERSION=${{ steps.ytdlp.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
