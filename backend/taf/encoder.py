@@ -369,8 +369,9 @@ class TafEncoder:
 
     def _encode_frame(self, output_frame):
         """Encode one Opus frame with 4K block alignment."""
-        # If the current block tail is too small for a valid packet, flush first and retry.
-        for _ in range(2):
+        # If the current block tail is too small for a valid packet, flush or fill
+        # and retry. 3 iterations: flush pending data, silence-fill tail, retry encode.
+        for _ in range(3):
             page_used = (
                 (self._file_pos % TONIEFILE_FRAME_SIZE)
                 + OGG_HEADER_LENGTH
@@ -392,11 +393,7 @@ class TafEncoder:
 
             flushed = self._flush_ogg_pages()
             if not flushed:
-                padded = self._pad_to_block_boundary()
-                if not padded:
-                    raise RuntimeError(
-                        f"Not enough space in block: payload={frame_payload}, remain={page_remain}"
-                    )
+                self._silence_fill_tail()
         else:
             raise RuntimeError(
                 f"Not enough space in block: payload={frame_payload}, remain={page_remain}"
@@ -469,26 +466,34 @@ class TafEncoder:
         return True
 
     def _encode_chapter_fill(self):
-        """Fill remaining block space with a silence Opus frame at chapter boundaries.
+        """Fill remaining block space at chapter boundaries via silence fill."""
+        self._silence_fill_tail()
 
-        Raw zero-padding at chapter boundaries breaks Toniebox OGG sync. Instead,
-        encode a valid Opus silence packet sized to fill exactly the remaining block
-        space. Falls back to zero-padding only if the space is too small for a
-        valid Opus packet (< OPUS_PACKET_MINSIZE + OGG_HEADER_LENGTH + 1 bytes).
+    def _silence_fill_tail(self):
+        """Fill the remaining block space with a silence Opus frame.
+
+        Used both at chapter boundaries (_encode_chapter_fill) and within chapters
+        (_encode_frame) when the block tail is too small for the next real audio frame.
+        Avoids raw zero-padding which breaks Toniebox OGG sync at any position.
+
+        The Opus packet is sized so the resulting OGG page fills the block exactly:
+          frame_payload = (page_remain // 256) * 255 + (page_remain % 256) - 1
+
+        Falls back to zero-padding only for tails < 29 bytes (smaller than the
+        minimum possible OGG page: 27 header + 1 segment + 1 body byte).
         """
         remain = TONIEFILE_FRAME_SIZE - (self._file_pos % TONIEFILE_FRAME_SIZE)
         if remain == TONIEFILE_FRAME_SIZE:
             return  # Already block-aligned
 
-        # page_remain: space for segment table + body (OGG header is 27 bytes)
-        page_remain = remain - OGG_HEADER_LENGTH
-        # Convert page space to exact Opus packet size so the OGG page fills the block
-        frame_payload = (page_remain // 256) * 255 + (page_remain % 256) - 1
-
-        if frame_payload < OPUS_PACKET_MINSIZE:
-            # Too little space for a valid Opus packet, fall back to zero-padding
+        # Minimum valid OGG page = 27 + 1 segment + 1 body byte = 29 bytes
+        if remain < 29:
             self._pad_to_block_boundary()
             return
+
+        page_remain = remain - OGG_HEADER_LENGTH
+        frame_payload = (page_remain // 256) * 255 + (page_remain % 256) - 1
+        frame_payload = max(1, frame_payload)
 
         opus = _get_opus()
         output_frame = (ctypes.c_ubyte * TONIEFILE_FRAME_SIZE)()
