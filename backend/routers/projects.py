@@ -332,7 +332,7 @@ async def list_projects():
             projects.append(_scan_project(entry))
 
     # Neueste zuerst
-    projects.sort(key=lambda p: p.get("created", ""), reverse=True)
+    projects.sort(key=lambda p: float(p.get("created", 0) or 0), reverse=True)
     return {"projects": projects}
 
 
