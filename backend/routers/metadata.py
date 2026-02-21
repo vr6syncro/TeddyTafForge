@@ -307,6 +307,30 @@ async def validate_databases():
     return result
 
 
+@router.post("/migrate-model-ids")
+async def migrate_model_ids():
+    """Migriert bestehende Eintraege mit model='999999' auf audio_id[0].
+
+    Betrifft nur Eintraege die vor T-026 (fix/taf-chapter-offset) erstellt wurden.
+    """
+    entries = _read_custom_json()
+    migrated = 0
+
+    for entry in entries:
+        if entry.get("model") == "999999":
+            aids = list(_extract_audio_ids(entry))
+            if aids:
+                entry["model"] = aids[0]
+                migrated += 1
+                log.info("Migriert: title='%s' model 999999 -> %s", entry.get("title", "?"), aids[0])
+
+    if migrated:
+        _write_custom_json(entries)
+        await _reload_teddycloud_cache()
+
+    return {"status": "ok", "migrated": migrated, "total": len(entries)}
+
+
 @router.get("/check-audio-id/{audio_id}")
 async def check_audio_id(audio_id: str):
     """Pruefe ob eine Audio-ID bereits vergeben ist."""
