@@ -324,6 +324,14 @@ class TafEncoder:
         """Mark the current position as start of a new chapter."""
         if len(self._track_page_nums) >= TONIEFILE_MAX_CHAPTERS:
             raise ValueError(f"Maximum {TONIEFILE_MAX_CHAPTERS} chapters exceeded")
+        # For chapters after the first: flush pending OGG data and align to block
+        # boundary before recording the chapter offset. Without this, the offset
+        # points to the last page of the *previous* chapter instead of the first
+        # page of the new one (off-by-one bug).
+        if self._track_page_nums:
+            self._flush_ogg_pages()
+            if self._file_pos % TONIEFILE_FRAME_SIZE != 0:
+                self._pad_to_block_boundary()
         self._track_page_nums.append(self._taf_block_num)
 
     def encode(self, pcm_data: bytes):
