@@ -331,7 +331,7 @@ class TafEncoder:
         if self._track_page_nums:
             self._flush_ogg_pages()
             if self._file_pos % TONIEFILE_FRAME_SIZE != 0:
-                self._pad_to_block_boundary()
+                self._encode_chapter_fill()
         self._track_page_nums.append(self._taf_block_num)
 
     def encode(self, pcm_data: bytes):
@@ -468,6 +468,53 @@ class TafEncoder:
         self._taf_block_num += 1
         return True
 
+    def _encode_chapter_fill(self):
+        """Fill remaining block space with a silence Opus frame at chapter boundaries.
+
+        Raw zero-padding at chapter boundaries breaks Toniebox OGG sync. Instead,
+        encode a valid Opus silence packet sized to fill exactly the remaining block
+        space. Falls back to zero-padding only if the space is too small for a
+        valid Opus packet (< OPUS_PACKET_MINSIZE + OGG_HEADER_LENGTH + 1 bytes).
+        """
+        remain = TONIEFILE_FRAME_SIZE - (self._file_pos % TONIEFILE_FRAME_SIZE)
+        if remain == TONIEFILE_FRAME_SIZE:
+            return  # Already block-aligned
+
+        # page_remain: space for segment table + body (OGG header is 27 bytes)
+        page_remain = remain - OGG_HEADER_LENGTH
+        # Convert page space to exact Opus packet size so the OGG page fills the block
+        frame_payload = (page_remain // 256) * 255 + (page_remain % 256) - 1
+
+        if frame_payload < OPUS_PACKET_MINSIZE:
+            # Too little space for a valid Opus packet, fall back to zero-padding
+            self._pad_to_block_boundary()
+            return
+
+        opus = _get_opus()
+        output_frame = (ctypes.c_ubyte * TONIEFILE_FRAME_SIZE)()
+        silence = (ctypes.c_int16 * (OPUS_FRAME_SIZE * OPUS_CHANNELS))()
+
+        frame_len = opus.opus_encode(
+            self._enc, silence, OPUS_FRAME_SIZE, output_frame, frame_payload,
+        )
+        if frame_len <= 0:
+            self._pad_to_block_boundary()
+            return
+
+        # Always pad to exact target so the OGG page fills the block precisely
+        if frame_len < frame_payload:
+            ret = opus.opus_packet_pad(output_frame, frame_len, frame_payload)
+            if ret < 0:
+                self._pad_to_block_boundary()
+                return
+            frame_len = frame_payload
+
+        self._ogg_granule_position += OPUS_FRAME_SIZE
+        packet_data = bytes(output_frame[:frame_len])
+        self._ogg.packetin(packet_data, self._ogg_granule_position)
+        self._ogg_packet_count += 1
+        self._flush_ogg_pages()
+
     def _write_audio(self, data: bytes):
         """Write audio data, update SHA1 and position."""
         self._file.write(data)
@@ -494,8 +541,9 @@ class TafEncoder:
             self._encode_frame(output_frame)
             self._audio_frame_used = 0
 
-        # Flush any remaining OGG data as final page
+        # Flush any remaining OGG data as final page with EOS flag
         if self._ogg.lacing_fill > 0 or self._ogg.body_fill > 0:
+            self._ogg._eos = True  # Mark end of stream (EOS bit in OGG page header)
             page = self._ogg.flush()
             if page:
                 self._write_audio(page)
