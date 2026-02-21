@@ -283,7 +283,7 @@ async def _ensure_custom_entry(project_meta: dict, force_update: bool = True) ->
 
     entry = {
         "no": "0",
-        "model": "999999",
+        "model": audio_id,
         "audio_id": [audio_id],
         "hash": [str(project_meta.get("hash") or "")] if project_meta.get("hash") else [],
         "title": title,

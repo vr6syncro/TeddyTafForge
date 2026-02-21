@@ -152,7 +152,7 @@ def _write_custom_json(entries: list[dict]) -> None:
 
 class CustomTonieEntry(BaseModel):
     no: str = "0"
-    model: str = "999999"
+    model: str = ""
     audio_id: list[str] = []
     hash: list[str] = []
     title: str = ""

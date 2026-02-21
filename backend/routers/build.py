@@ -228,7 +228,7 @@ async def _run_build(project_id: str, request: BuildRequest) -> None:
 
             entry = {
                 "no": "0",
-                "model": "999999",
+                "model": str(audio_id),
                 "audio_id": [str(audio_id)],
                 "hash": [sha1_hex],
                 "title": request.title,
