@@ -367,7 +367,7 @@ class TafEncoder:
                 self._encode_frame(output_frame)
                 self._audio_frame_used = 0
 
-    def _encode_frame(self, output_frame):
+    def _encode_frame(self, output_frame, eos: bool = False):
         """Encode one Opus frame with 4K block alignment."""
         # If the current block tail is too small for a valid packet, flush or fill
         # and retry. 3 iterations: flush pending data, silence-fill tail, retry encode.
@@ -419,7 +419,7 @@ class TafEncoder:
 
         # Feed to OGG stream
         packet_data = bytes(output_frame[:frame_len])
-        self._ogg.packetin(packet_data, self._ogg_granule_position)
+        self._ogg.packetin(packet_data, self._ogg_granule_position, eos=eos)
         self._ogg_packet_count += 1
 
         # Check if block is full -> flush
@@ -479,6 +479,11 @@ class TafEncoder:
         The Opus packet is sized so the resulting OGG page fills the block exactly:
           frame_payload = (page_remain // 256) * 255 + (page_remain % 256) - 1
 
+        Edge case when page_remain % 256 == 0: the standard formula produces a page
+        1 byte short (26 + N*256 instead of 27 + N*256). Fix: reduce page_remain by 29
+        so the first frame fills (remain-29) bytes, then recurse for the trailing 29 bytes.
+        Proof: adjusted page_remain = N*256-29, % 256 = 227, formula correct.
+
         Falls back to zero-padding only for tails < 29 bytes (smaller than the
         minimum possible OGG page: 27 header + 1 segment + 1 body byte).
         """
@@ -492,6 +497,13 @@ class TafEncoder:
             return
 
         page_remain = remain - OGG_HEADER_LENGTH
+
+        # Edge case: page_remain % 256 == 0 → formula gives OGG page 1 byte short.
+        # Shrink page_remain by 29 so first frame fills (remain-29) bytes; recurse
+        # to handle the trailing 29 bytes ((29-27)%256=2, formula correct there).
+        if page_remain % 256 == 0:
+            page_remain -= 29
+
         frame_payload = (page_remain // 256) * 255 + (page_remain % 256) - 1
         frame_payload = max(1, frame_payload)
 
@@ -520,6 +532,11 @@ class TafEncoder:
         self._ogg_packet_count += 1
         self._flush_ogg_pages()
 
+        # Recurse if bytes remain (happens when the edge-case split emits 2 frames)
+        new_remain = TONIEFILE_FRAME_SIZE - (self._file_pos % TONIEFILE_FRAME_SIZE)
+        if 0 < new_remain < TONIEFILE_FRAME_SIZE:
+            self._silence_fill_tail()
+
     def _write_audio(self, data: bytes):
         """Write audio data, update SHA1 and position."""
         self._file.write(data)
@@ -532,7 +549,8 @@ class TafEncoder:
 
         After close(), sha1_hash and sha1_hash_hex are available.
         """
-        # Encode remaining samples (zero-pad to full frame, like toniefile.c)
+        # Encode remaining samples (zero-pad to full frame, like toniefile.c).
+        # Pass eos=True so the last audio packet's OGG page carries the EOS flag.
         if self._audio_frame_used > 0 and self._enc:
             output_frame = (ctypes.c_ubyte * TONIEFILE_FRAME_SIZE)()
             remaining = OPUS_FRAME_SIZE - self._audio_frame_used
@@ -543,10 +561,12 @@ class TafEncoder:
                 remaining * OPUS_CHANNELS * 2,
             )
             self._audio_frame_used = OPUS_FRAME_SIZE
-            self._encode_frame(output_frame)
+            self._encode_frame(output_frame, eos=True)
             self._audio_frame_used = 0
 
-        # Flush any remaining OGG data as final page with EOS flag
+        # Flush any remaining OGG data as final page with EOS flag.
+        # This covers the rare case where the partial frame was flushed internally
+        # by _encode_frame but lacing_fill still has pending data.
         if self._ogg.lacing_fill > 0 or self._ogg.body_fill > 0:
             self._ogg._eos = True  # Mark end of stream (EOS bit in OGG page header)
             page = self._ogg.flush()
