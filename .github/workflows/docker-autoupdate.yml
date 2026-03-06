@@ -22,24 +22,11 @@ jobs:
 
       - name: Resolve latest yt-dlp version from GitHub Releases
         id: ytdlp
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python - <<'PY'
-          import json, urllib.request
-          req = urllib.request.Request(
-              "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest",
-              headers={"Accept": "application/vnd.github+json"},
-          )
-          with urllib.request.urlopen(req, timeout=20) as r:
-              data = json.load(r)
-          tag = str(data.get("tag_name", "")).strip()
-          if not tag:
-              raise SystemExit("No tag_name in GitHub release response")
-          version = tag.lstrip("v")
-          print(f"version={version}")
-          with open("out.txt", "w", encoding="utf-8") as f:
-              f.write(version)
-          PY
-          echo "version=$(cat out.txt)" >> "$GITHUB_OUTPUT"
+          version=$(gh release view --repo yt-dlp/yt-dlp --json tagName -q '.tagName | ltrimstr("v")')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
