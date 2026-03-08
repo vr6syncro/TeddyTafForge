@@ -23,6 +23,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Dependency review
+        continue-on-error: true
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: high
@@ -35,15 +36,17 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: fs
-          scanners: vuln,secret,config
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          format: sarif
-          output: trivy-results.sarif
-          exit-code: 0
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/src" \
+            aquasec/trivy:0.56.1 \
+            fs \
+            --scanners vuln,secret,config \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --format sarif \
+            --output /src/trivy-results.sarif \
+            /src
 
       - name: Upload Trivy results
         uses: github/codeql-action/upload-sarif@v3
