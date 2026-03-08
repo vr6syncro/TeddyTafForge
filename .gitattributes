@@ -1,0 +1,8 @@
+.agents export-ignore
+.claude export-ignore
+.codex export-ignore
+.aimaster export-ignore
+AGENTS.md export-ignore
+CLAUDE.md export-ignore
+agents.md export-ignore
+claude.md export-ignore

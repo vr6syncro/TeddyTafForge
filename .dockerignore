@@ -1,0 +1,11 @@
+.git
+.gitignore
+.agents/
+.claude/
+.codex/
+.aimaster/
+AGENTS.md
+CLAUDE.md
+agents.md
+claude.md
+temp/

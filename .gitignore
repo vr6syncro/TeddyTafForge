@@ -32,5 +32,11 @@ temp/
 docs/
 
 # Claude Code
+.agents/
 .claude/
+.codex/
+.aimaster/
+AGENTS.md
 CLAUDE.md
+agents.md
+claude.md
