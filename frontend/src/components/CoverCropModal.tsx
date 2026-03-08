@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { Modal, Segmented, Slider, Typography } from "antd";
+import { useUiI18n } from "../uiI18n";
 
 const { Text } = Typography;
 
@@ -31,6 +32,7 @@ const clipShape = (ctx: CanvasRenderingContext2D, cx: number, cy: number, shape:
 };
 
 const CoverCropModal = ({ file, open, onConfirm, onCancel }: CoverCropModalProps) => {
+  const { text } = useUiI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -154,12 +156,12 @@ const CoverCropModal = ({ file, open, onConfirm, onCancel }: CoverCropModalProps
 
   return (
     <Modal
-      title="Cover zuschneiden"
+      title={text.cropModal.title}
       open={open}
       onOk={handleConfirm}
       onCancel={onCancel}
-      okText="Uebernehmen"
-      cancelText="Abbrechen"
+      okText={text.cropModal.confirm}
+      cancelText={text.cropModal.cancel}
       width={480}
       centered
       destroyOnClose
@@ -169,11 +171,11 @@ const CoverCropModal = ({ file, open, onConfirm, onCancel }: CoverCropModalProps
           value={shape}
           onChange={(v) => setShape(v as CropShape)}
           options={[
-            { label: "Rund (Coin)", value: "round" },
-            { label: "Eckig (Label)", value: "square" },
+            { label: text.cropModal.round, value: "round" },
+            { label: text.cropModal.square, value: "square" },
           ]}
         />
-        <Text type="secondary" style={{ fontSize: 12 }}>Bild verschieben (Drag) und zoomen (Mausrad/Slider)</Text>
+        <Text type="secondary" style={{ fontSize: 12 }}>{text.cropModal.hint}</Text>
         <canvas
           ref={canvasRef}
           width={CANVAS_SIZE}
@@ -190,7 +192,7 @@ const CoverCropModal = ({ file, open, onConfirm, onCancel }: CoverCropModalProps
           onWheel={handleWheel}
         />
         <div style={{ width: "100%", padding: "0 16px" }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>Zoom</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{text.cropModal.zoom}</Text>
           <Slider
             min={0.1}
             max={5}

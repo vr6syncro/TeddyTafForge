@@ -27,6 +27,8 @@ import {
 } from "@ant-design/icons";
 import { api } from "../api";
 import type { CustomTonieEntry } from "../api";
+import { getMetadataLanguageOptions, sanitizeMetadataText } from "../appPreferences";
+import { useUiI18n } from "../uiI18n";
 
 const { Title, Text } = Typography;
 
@@ -57,6 +59,17 @@ const getEntryKey = (entry: CustomTonieEntry): string => {
 };
 
 const CustomToniesEditor = () => {
+  const { text, locale } = useUiI18n();
+  const metadataLanguageOptions = getMetadataLanguageOptions(text.metadata.languages);
+  const categoryOptions = [
+    { value: "audio-play", label: text.metadata.categories["audio-play"] },
+    { value: "audio-book", label: text.metadata.categories["audio-book"] },
+    { value: "music", label: text.metadata.categories.music },
+    { value: "audio-play-songs", label: text.metadata.categories["audio-play-songs"] },
+    { value: "audio-book-songs", label: text.metadata.categories["audio-book-songs"] },
+    { value: "audio-play-educational", label: text.metadata.categories["audio-play-educational"] },
+    { value: "creative-tonie", label: text.metadata.categories["creative-tonie"] },
+  ];
   const [entries, setEntries] = useState<CustomTonieEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -80,7 +93,7 @@ const CustomToniesEditor = () => {
       const result = await api.getCustomEntries();
       setEntries(result.entries as CustomTonieEntry[]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Fehler beim Laden");
+      setError(err instanceof Error ? err.message : text.common.loadingError);
     } finally {
       setLoading(false);
     }
@@ -98,14 +111,20 @@ const CustomToniesEditor = () => {
         setError("");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Validierung fehlgeschlagen");
+      setError(err instanceof Error ? err.message : text.customTonies.validation.warnings);
     }
   };
 
   const startEdit = (entry: CustomTonieEntry) => {
     const key = getEntryKey(entry);
     setEditingKey(key);
-    setEditData({ ...entry });
+    setEditData({
+      ...entry,
+      title: sanitizeMetadataText(entry.title),
+      series: sanitizeMetadataText(entry.series),
+      episodes: sanitizeMetadataText(entry.episodes),
+      language: entry.language === "en-gb" ? "en-gb" : "de-de",
+    });
     setIsNew(false);
   };
 
@@ -123,7 +142,7 @@ const CustomToniesEditor = () => {
 
   const saveEdit = async () => {
     if (!editData.title) {
-      setError("Titel ist erforderlich");
+      setError(text.customTonies.messages.requiredTitle);
       return;
     }
     try {
@@ -135,7 +154,7 @@ const CustomToniesEditor = () => {
       cancelEdit();
       await loadEntries();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Fehler beim Speichern");
+      setError(err instanceof Error ? err.message : text.common.saveError);
     }
   };
 
@@ -144,7 +163,7 @@ const CustomToniesEditor = () => {
       await api.deleteCustomEntry(audioId);
       await loadEntries();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Fehler beim Loeschen");
+      setError(err instanceof Error ? err.message : text.common.deleteError);
     }
   };
 
@@ -159,7 +178,10 @@ const CustomToniesEditor = () => {
   };
 
   const addTrack = () => {
-    updateEditField("tracks", [...editData.tracks, `Track ${editData.tracks.length + 1}`]);
+    updateEditField("tracks", [
+      ...editData.tracks,
+      text.customTonies.fields.trackName(editData.tracks.length + 1),
+    ]);
   };
 
   const removeTrack = (index: number) => {
@@ -184,6 +206,9 @@ const CustomToniesEditor = () => {
     const key = getEntryKey(entry);
     const isEditing = editingKey === key;
     const data = isEditing ? editData : entry;
+    const safeTitle = sanitizeMetadataText(entry.title) || text.customTonies.cards.noTitle;
+    const safeSeries = sanitizeMetadataText(entry.series);
+    const safeEpisodes = sanitizeMetadataText(entry.episodes);
 
     const audioIdDisplay = Array.isArray(entry.audio_id)
       ? entry.audio_id.join(", ")
@@ -195,8 +220,8 @@ const CustomToniesEditor = () => {
         size="small"
         title={
           <Space>
-            <Text strong>{entry.title || "Ohne Titel"}</Text>
-            {entry.series && <Tag color="blue">{entry.series}</Tag>}
+            <Text strong>{safeTitle}</Text>
+            {safeSeries && <Tag color="blue">{safeSeries}</Tag>}
             <Tag>{audioIdDisplay}</Tag>
           </Space>
         }
@@ -204,19 +229,19 @@ const CustomToniesEditor = () => {
           isEditing ? (
             <Space>
               <Button size="small" icon={<SaveOutlined />} type="primary" onClick={saveEdit}>
-                Speichern
+                {text.customTonies.buttons.save}
               </Button>
               <Button size="small" icon={<CloseOutlined />} onClick={cancelEdit}>
-                Abbrechen
+                {text.customTonies.buttons.cancel}
               </Button>
             </Space>
           ) : (
             <Space>
               <Button size="small" icon={<EditOutlined />} onClick={() => startEdit(entry)}>
-                Bearbeiten
+                {text.common.edit}
               </Button>
               <Popconfirm
-                title="Eintrag unwiderruflich loeschen?"
+                title={text.customTonies.popconfirm.delete}
                 onConfirm={() => deleteEntry(key)}
               >
                 <Button size="small" danger icon={<DeleteOutlined />} />
@@ -228,72 +253,51 @@ const CustomToniesEditor = () => {
         {isEditing ? (
           <Form layout="vertical" size="small">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Form.Item label="Titel" required>
+              <Form.Item label={text.common.title} required>
                 <Input
                   value={data.title}
                   onChange={(e) => updateEditField("title", e.target.value)}
                 />
               </Form.Item>
-              <Form.Item label="Serie">
+              <Form.Item label={text.common.series}>
                 <Input
                   value={data.series}
                   onChange={(e) => updateEditField("series", e.target.value)}
                 />
               </Form.Item>
-              <Form.Item label="Episoden">
+              <Form.Item label={text.customTonies.fields.episodePlural}>
                 <Input
                   value={data.episodes}
                   onChange={(e) => updateEditField("episodes", e.target.value)}
                 />
               </Form.Item>
-              <Form.Item label="Model">
+              <Form.Item label={text.customTonies.fields.model}>
                 <Input
                   value={data.model}
                   onChange={(e) => updateEditField("model", e.target.value)}
                 />
               </Form.Item>
-              <Form.Item label="Sprache">
+              <Form.Item label={text.common.language}>
                 <Select
                   value={data.language}
                   onChange={(val) => updateEditField("language", val)}
-                  options={[
-                    { value: "de-de", label: "Deutsch" },
-                    { value: "en-gb", label: "English (UK)" },
-                    { value: "en-us", label: "English (US)" },
-                    { value: "fr-fr", label: "Francais" },
-                    { value: "nl-nl", label: "Nederlands" },
-                    { value: "da-dk", label: "Dansk" },
-                    { value: "sv-se", label: "Svenska" },
-                    { value: "pl-pl", label: "Polski" },
-                    { value: "it-it", label: "Italiano" },
-                    { value: "es-es", label: "Espanol" },
-                    { value: "pt-pt", label: "Portugues" },
-                    { value: "fi-fi", label: "Suomi" },
-                  ]}
+                  options={metadataLanguageOptions}
                 />
               </Form.Item>
-              <Form.Item label="Kategorie">
+              <Form.Item label={text.common.category}>
                 <Select
                   value={data.category}
                   onChange={(val) => updateEditField("category", val)}
-                  options={[
-                    { value: "audio-play", label: "Hoerspiel" },
-                    { value: "audio-book", label: "Hoerbuch" },
-                    { value: "music", label: "Musik" },
-                    { value: "audio-play-songs", label: "Hoerspiel mit Liedern" },
-                    { value: "audio-book-songs", label: "Hoerbuch mit Liedern" },
-                    { value: "audio-play-educational", label: "Lern-Hoerspiel" },
-                    { value: "creative-tonie", label: "Kreativ-Tonie" },
-                  ]}
+                  options={categoryOptions}
                 />
               </Form.Item>
-              <Form.Item label="No">
+              <Form.Item label={text.customTonies.fields.no}>
                 <Input
                   value={data.no}
                   onChange={(e) => updateEditField("no", e.target.value)}
                 />
               </Form.Item>
-              <Form.Item label="Release (Unix-Timestamp)">
+              <Form.Item label={text.customTonies.fields.release}>
                 <Input
                   value={data.release}
                   onChange={(e) => updateEditField("release", e.target.value)}
@@ -301,15 +305,15 @@ const CustomToniesEditor = () => {
               </Form.Item>
             </div>
 
-            <Form.Item label="Bild-URL (pic)">
+            <Form.Item label={text.customTonies.fields.picture}>
               <Input
                 value={data.pic}
                 onChange={(e) => updateEditField("pic", e.target.value)}
-                placeholder="/plugins/teddytafforge/covers/bild.jpg"
+                placeholder={text.customTonies.placeholders.picture}
               />
             </Form.Item>
 
-            <Divider titlePlacement="left" plain>Audio-IDs</Divider>
+            <Divider titlePlacement="left" plain>{text.customTonies.fields.audioIds}</Divider>
             {data.audio_id.map((aid, i) => (
               <Space key={i} style={{ marginBottom: 4, width: "100%" }}>
                 <Input
@@ -326,10 +330,10 @@ const CustomToniesEditor = () => {
               </Space>
             ))}
             <Button size="small" icon={<PlusOutlined />} onClick={() => addArrayItem("audio_id")}>
-              Audio-ID hinzufuegen
+              {text.customTonies.buttons.addAudioId}
             </Button>
 
-            <Divider titlePlacement="left" plain>SHA1-Hashes</Divider>
+            <Divider titlePlacement="left" plain>{text.customTonies.fields.hashes}</Divider>
             {data.hash.map((h, i) => (
               <Space key={i} style={{ marginBottom: 4, width: "100%" }}>
                 <Input
@@ -346,10 +350,10 @@ const CustomToniesEditor = () => {
               </Space>
             ))}
             <Button size="small" icon={<PlusOutlined />} onClick={() => addArrayItem("hash")}>
-              Hash hinzufuegen
+              {text.customTonies.buttons.addHash}
             </Button>
 
-            <Divider titlePlacement="left" plain>Tracks</Divider>
+            <Divider titlePlacement="left" plain>{text.customTonies.fields.tracks}</Divider>
             {data.tracks.map((track, i) => (
               <Space key={i} style={{ marginBottom: 4, width: "100%" }}>
                 <Tag>{i + 1}</Tag>
@@ -367,7 +371,7 @@ const CustomToniesEditor = () => {
               </Space>
             ))}
             <Button size="small" icon={<PlusOutlined />} onClick={addTrack}>
-              Track hinzufuegen
+              {text.customTonies.buttons.addTrack}
             </Button>
           </Form>
         ) : (
@@ -380,7 +384,7 @@ const CustomToniesEditor = () => {
                 label: (
                   <Space>
                     <Text type="secondary">
-                      {entry.tracks?.length ?? 0} Tracks
+                      {entry.tracks?.length ?? 0} {text.common.tracks}
                     </Text>
                     {entry.language && <Tag>{entry.language}</Tag>}
                     {entry.category && <Tag>{entry.category}</Tag>}
@@ -390,17 +394,17 @@ const CustomToniesEditor = () => {
                   <Space direction="vertical" size="small" style={{ width: "100%" }}>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                       <Text type="secondary">
-                        Episoden: {entry.episodes || "-"}
+                        {text.customTonies.fields.episodePlural}: {safeEpisodes || "-"}
                       </Text>
                       <Text type="secondary">
-                        Model: {entry.model || "-"}
+                        {text.customTonies.fields.model}: {entry.model || "-"}
                       </Text>
                       <Text type="secondary">
-                        No: {entry.no ?? "-"}
+                        {text.customTonies.fields.no}: {entry.no ?? "-"}
                       </Text>
                       <Text type="secondary">
-                        Release: {entry.release
-                          ? new Date(Number(entry.release) * 1000).toLocaleDateString("de-DE")
+                        {text.customTonies.fields.releaseLabel}: {entry.release
+                          ? new Date(Number(entry.release) * 1000).toLocaleDateString(locale)
                           : "-"}
                       </Text>
                     </div>
@@ -411,12 +415,12 @@ const CustomToniesEditor = () => {
                     )}
                     {entry.pic && (
                       <Text type="secondary" style={{ fontSize: 11 }}>
-                        Bild: {entry.pic}
+                        {text.customTonies.fields.image}: {entry.pic}
                       </Text>
                     )}
                     {entry.tracks && entry.tracks.length > 0 && (
                       <>
-                        <Divider plain style={{ margin: "8px 0" }}>Tracks</Divider>
+                        <Divider plain style={{ margin: "8px 0" }}>{text.common.tracks}</Divider>
                         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                           {entry.tracks.map((t, i) => (
                             <Tag key={i}>{i + 1}. {t}</Tag>
@@ -437,23 +441,23 @@ const CustomToniesEditor = () => {
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <Title level={4} style={{ margin: 0 }}>tonies.custom.json</Title>
+        <Title level={4} style={{ margin: 0 }}>{text.customTonies.title}</Title>
         <Space>
           <Button icon={<SafetyCertificateOutlined />} onClick={runValidation}>
-            Validieren
+            {text.customTonies.buttons.validate}
           </Button>
           <Button icon={<PlusOutlined />} onClick={startNew}>
-            Neuer Eintrag
+            {text.customTonies.buttons.newEntry}
           </Button>
           <Button icon={<ReloadOutlined />} onClick={loadEntries} loading={loading}>
-            Neu laden
+            {text.customTonies.buttons.reload}
           </Button>
         </Space>
       </div>
 
       <Input
         prefix={<SearchOutlined />}
-        placeholder="Suche nach Titel, Serie oder Audio-ID..."
+        placeholder={text.customTonies.placeholders.search}
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
         allowClear
@@ -462,26 +466,29 @@ const CustomToniesEditor = () => {
       {error && <Alert type="error" message={error} closable onClose={() => setError("")} />}
 
       {validationResult && (
-        <Card size="small" title="Validierungsergebnis">
+        <Card size="small" title={text.customTonies.validation.title}>
           <Space direction="vertical" size="small" style={{ width: "100%" }}>
             <div style={{ display: "flex", gap: 16 }}>
-              <Tag>Offiziell: {validationResult.official_count} Eintraege</Tag>
-              <Tag>Custom: {validationResult.custom_count} Eintraege</Tag>
+              <Tag>{text.customTonies.validation.official(validationResult.official_count)}</Tag>
+              <Tag>{text.customTonies.validation.custom(validationResult.custom_count)}</Tag>
               <Tag color={validationResult.status === "ok" ? "green" : "orange"}>
-                {validationResult.status === "ok" ? "Keine Konflikte" : "Warnungen"}
+                {validationResult.status === "ok" ? text.customTonies.validation.ok : text.customTonies.validation.warnings}
               </Tag>
             </div>
 
             {validationResult.conflicts.length > 0 && (
               <Alert
                 type="warning"
-                message={`${validationResult.conflicts.length} Audio-ID Kollision(en) mit offizieller DB`}
+                message={text.customTonies.validation.audioIdCollisions(validationResult.conflicts.length)}
                 description={
                   <ul style={{ margin: 0, paddingLeft: 16 }}>
                     {validationResult.conflicts.map((c, i) => (
                       <li key={i}>
-                        ID {c.audio_id}: Custom &quot;{c.custom_title.join(", ")}&quot;
-                        vs. Offiziell &quot;{c.official_title.join(", ")}&quot;
+                        {text.customTonies.validation.audioIdCollisionItem(
+                          c.audio_id,
+                          c.custom_title.join(", "),
+                          c.official_title.join(", ")
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -492,12 +499,12 @@ const CustomToniesEditor = () => {
             {validationResult.custom_duplicates.length > 0 && (
               <Alert
                 type="warning"
-                message={`${validationResult.custom_duplicates.length} Duplikat(e) in tonies.custom.json`}
+                message={text.customTonies.validation.duplicates(validationResult.custom_duplicates.length)}
                 description={
                   <ul style={{ margin: 0, paddingLeft: 16 }}>
                     {validationResult.custom_duplicates.map((d, i) => (
                       <li key={i}>
-                        ID {d.audio_id}: {d.titles.join(", ")}
+                        {text.customTonies.validation.duplicateItem(d.audio_id, d.titles.join(", "))}
                       </li>
                     ))}
                   </ul>
@@ -508,13 +515,16 @@ const CustomToniesEditor = () => {
             {validationResult.hash_conflicts.length > 0 && (
               <Alert
                 type="warning"
-                message={`${validationResult.hash_conflicts.length} Hash-Kollision(en)`}
+                message={text.customTonies.validation.hashCollisions(validationResult.hash_conflicts.length)}
                 description={
                   <ul style={{ margin: 0, paddingLeft: 16 }}>
                     {validationResult.hash_conflicts.map((h, i) => (
                       <li key={i}>
-                        {h.hash}: Custom &quot;{h.custom_title}&quot;
-                        vs. Offiziell &quot;{h.official_title}&quot;
+                        {text.customTonies.validation.hashCollisionItem(
+                          h.hash,
+                          h.custom_title,
+                          h.official_title
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -528,27 +538,27 @@ const CustomToniesEditor = () => {
       {isNew && editingKey === "__new__" && (
         <Card
           size="small"
-          title="Neuer Custom Tonie"
+          title={text.customTonies.cards.newEntry}
           extra={
             <Space>
               <Button size="small" icon={<SaveOutlined />} type="primary" onClick={saveEdit}>
-                Speichern
+                {text.customTonies.buttons.save}
               </Button>
               <Button size="small" icon={<CloseOutlined />} onClick={cancelEdit}>
-                Abbrechen
+                {text.customTonies.buttons.cancel}
               </Button>
             </Space>
           }
         >
           <Form layout="vertical" size="small">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Form.Item label="Titel" required>
+              <Form.Item label={text.common.title} required>
                 <Input
                   value={editData.title}
                   onChange={(e) => updateEditField("title", e.target.value)}
                 />
               </Form.Item>
-              <Form.Item label="Serie">
+              <Form.Item label={text.common.series}>
                 <Input
                   value={editData.series}
                   onChange={(e) => updateEditField("series", e.target.value)}
@@ -556,7 +566,7 @@ const CustomToniesEditor = () => {
               </Form.Item>
             </div>
 
-            <Divider titlePlacement="left" plain>Audio-IDs</Divider>
+            <Divider titlePlacement="left" plain>{text.customTonies.fields.audioIds}</Divider>
             {editData.audio_id.map((aid, i) => (
               <Space key={i} style={{ marginBottom: 4 }}>
                 <Input
@@ -573,10 +583,10 @@ const CustomToniesEditor = () => {
               </Space>
             ))}
             <Button size="small" icon={<PlusOutlined />} onClick={() => addArrayItem("audio_id")}>
-              Audio-ID hinzufuegen
+              {text.customTonies.buttons.addAudioId}
             </Button>
 
-            <Divider titlePlacement="left" plain>Tracks</Divider>
+            <Divider titlePlacement="left" plain>{text.customTonies.fields.tracks}</Divider>
             {editData.tracks.map((track, i) => (
               <Space key={i} style={{ marginBottom: 4 }}>
                 <Tag>{i + 1}</Tag>
@@ -594,14 +604,14 @@ const CustomToniesEditor = () => {
               </Space>
             ))}
             <Button size="small" icon={<PlusOutlined />} onClick={addTrack}>
-              Track hinzufuegen
+              {text.customTonies.buttons.addTrack}
             </Button>
           </Form>
         </Card>
       )}
 
       {entries.length === 0 && !loading && !isNew && (
-        <Empty description="Keine Custom Tonies vorhanden" />
+        <Empty description={text.customTonies.empty} />
       )}
 
       {entries
@@ -609,10 +619,14 @@ const CustomToniesEditor = () => {
           if (!searchQuery) return true;
           const q = searchQuery.toLowerCase();
           const audioIds = Array.isArray(entry.audio_id) ? entry.audio_id.join(" ") : String(entry.audio_id || "");
-          const episodes = typeof entry.episodes === "string" ? entry.episodes : JSON.stringify(entry.episodes || "");
+          const title = sanitizeMetadataText(entry.title);
+          const series = sanitizeMetadataText(entry.series);
+          const episodes = sanitizeMetadataText(
+            typeof entry.episodes === "string" ? entry.episodes : JSON.stringify(entry.episodes || "")
+          );
           return (
-            (entry.title || "").toLowerCase().includes(q) ||
-            (entry.series || "").toLowerCase().includes(q) ||
+            title.toLowerCase().includes(q) ||
+            series.toLowerCase().includes(q) ||
             episodes.toLowerCase().includes(q) ||
             audioIds.toLowerCase().includes(q)
           );

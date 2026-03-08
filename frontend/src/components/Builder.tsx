@@ -25,6 +25,12 @@ import {
 } from "@ant-design/icons";
 import type { BuildFormData, ChapterData, InputMode } from "../types";
 import { api, type YoutubeInfoResult } from "../api";
+import {
+  getDefaultMetadataLanguage,
+  getMetadataLanguageOptions,
+  type MetadataLanguage,
+} from "../appPreferences";
+import { useUiI18n, type UiLanguage } from "../uiI18n";
 import ChapterList, { createEmptyChapter } from "./ChapterList";
 import LabelSettings, { defaultLabelConfig, type LabelConfig } from "./LabelSettings";
 import CoverCropModal from "./CoverCropModal";
@@ -60,19 +66,37 @@ const secondsToTimestamp = (value: number): string => {
   return [h, m, s].map((part) => String(part).padStart(2, "0")).join(":");
 };
 
-const Builder = () => {
-  const [formData, setFormData] = useState<BuildFormData>({
-    title: "",
-    series: "",
-    episodes: "",
-    language: "de-de",
-    category: "audio-play",
-    inputMode: "files",
-    chapters: [createEmptyChapter()],
-    bitrate: 96,
-    createCustomEntry: true,
-    generateLabel: false,
-  });
+interface BuilderProps {
+  uiLanguage: UiLanguage;
+}
+
+const createInitialFormData = (defaultMetadataLanguage: MetadataLanguage): BuildFormData => ({
+  title: "",
+  series: "",
+  episodes: "",
+  language: defaultMetadataLanguage,
+  category: "audio-play",
+  inputMode: "files",
+  chapters: [createEmptyChapter()],
+  bitrate: 96,
+  createCustomEntry: true,
+  generateLabel: false,
+});
+
+const Builder = ({ uiLanguage }: BuilderProps) => {
+  const { text } = useUiI18n();
+  const defaultMetadataLanguage = getDefaultMetadataLanguage(uiLanguage);
+  const metadataLanguageOptions = getMetadataLanguageOptions(text.metadata.languages);
+  const categoryOptions = [
+    { value: "audio-play", label: `${text.metadata.categories["audio-play"]} (96 kbps)` },
+    { value: "audio-book", label: `${text.metadata.categories["audio-book"]} (96 kbps)` },
+    { value: "music", label: `${text.metadata.categories.music} (128 kbps)` },
+    { value: "audio-play-songs", label: `${text.metadata.categories["audio-play-songs"]} (128 kbps)` },
+    { value: "audio-book-songs", label: `${text.metadata.categories["audio-book-songs"]} (128 kbps)` },
+    { value: "audio-play-educational", label: `${text.metadata.categories["audio-play-educational"]} (96 kbps)` },
+  ];
+  const [formData, setFormData] = useState<BuildFormData>(() => createInitialFormData(defaultMetadataLanguage));
+  const previousDefaultLanguageRef = useRef<MetadataLanguage>(defaultMetadataLanguage);
   const [labelConfig, setLabelConfig] = useState<LabelConfig>(defaultLabelConfig);
   const [cropFile, setCropFile] = useState<File | null>(null);
   const [cropOpen, setCropOpen] = useState(false);
@@ -103,9 +127,18 @@ const Builder = () => {
   const lastPolledMessageRef = useRef("");
 
   const appendLog = (line: string) => {
-    const ts = new Date().toLocaleTimeString("de-DE", { hour12: false });
+    const ts = new Date().toLocaleTimeString(text.locale, { hour12: false });
     setStatusLog((prev) => [...prev.slice(-199), `[${ts}] ${line}`]);
   };
+
+  useEffect(() => {
+    setFormData((prev) =>
+      prev.language === previousDefaultLanguageRef.current
+        ? { ...prev, language: defaultMetadataLanguage }
+        : prev
+    );
+    previousDefaultLanguageRef.current = defaultMetadataLanguage;
+  }, [defaultMetadataLanguage]);
 
   useEffect(() => {
     const consent = window.localStorage.getItem(YOUTUBE_CONSENT_KEY) === "true";
@@ -122,7 +155,7 @@ const Builder = () => {
 
   const handleInputModeChange = (mode: InputMode) => {
     if (isYoutubeMode(mode) && !youtubeEnabled) {
-      message.warning("URL-Modus ist deaktiviert");
+      message.warning(text.builder.errors.urlModeDisabled);
       return;
     }
 
@@ -159,7 +192,7 @@ const Builder = () => {
 
   const loadYoutubeInfo = async () => {
     if (!youtubeUrl.trim()) {
-      setError("Bitte Quell-URL eingeben");
+      setError(text.builder.errors.sourceUrlMissing);
       return;
     }
     const normalizedUrl = youtubeUrl.trim();
@@ -186,7 +219,7 @@ const Builder = () => {
       }
     } catch (err) {
       if (reqSeq !== youtubeRequestSeqRef.current) return;
-      setError(err instanceof Error ? err.message : "Quell-Infos konnten nicht geladen werden");
+      setError(err instanceof Error ? err.message : text.builder.errors.sourceInfoFailed);
     } finally {
       if (reqSeq === youtubeRequestSeqRef.current) {
         setYoutubeLoading(false);
@@ -196,7 +229,7 @@ const Builder = () => {
 
   const downloadYoutubeSource = async () => {
     if (!youtubeUrl.trim()) {
-      setError("Bitte Quell-URL eingeben");
+      setError(text.builder.errors.sourceUrlMissing);
       return;
     }
     const normalizedUrl = youtubeUrl.trim();
@@ -235,7 +268,7 @@ const Builder = () => {
         const chapters: ChapterData[] = result.chapters.map((ch, idx) => ({
           ...createEmptyChapter(),
           sourceType: "youtube",
-          title: ch.title || `Kapitel ${idx + 1}`,
+          title: ch.title || text.chapterList.title(idx + 1),
           sourceFileName: result.filename,
           startTime: secondsToTimestamp(ch.start_time),
           endTime: ch.end_time != null ? secondsToTimestamp(ch.end_time) : undefined,
@@ -250,7 +283,7 @@ const Builder = () => {
           chapters: [
             {
               ...(prev.chapters[0] ?? createEmptyChapter()),
-              title: prev.chapters[0]?.title || result.title || "Kapitel 1",
+              title: prev.chapters[0]?.title || result.title || text.chapterList.title(1),
               sourceType: "youtube",
               sourceFileName: result.filename,
             },
@@ -270,10 +303,10 @@ const Builder = () => {
       if (youtubeAutoCover) {
         await applyYoutubeThumbnail(normalizedUrl, true);
       }
-      appendLog(`Quelle vorbereitet: ${result.filename}`);
+      appendLog(text.builder.status.sourcePrepared(result.filename));
     } catch (err) {
       if (reqSeq !== youtubeRequestSeqRef.current) return;
-      setError(err instanceof Error ? err.message : "URL-Download fehlgeschlagen");
+      setError(err instanceof Error ? err.message : text.builder.errors.downloadFailed);
     } finally {
       if (reqSeq === youtubeRequestSeqRef.current) {
         setYoutubeLoading(false);
@@ -283,7 +316,7 @@ const Builder = () => {
 
   const applyYoutubeThumbnail = async (url: string, silent = false) => {
     if (!url.trim()) {
-      setError("Bitte Quell-URL eingeben");
+      setError(text.builder.errors.sourceUrlMissing);
       return;
     }
     setYoutubeThumbLoading(true);
@@ -293,10 +326,10 @@ const Builder = () => {
       setCropFile(file);
       setCropOpen(true);
       if (!silent) {
-        message.success("Thumbnail als Cover-Vorschlag geladen");
+        message.success(text.builder.buttons.useThumbnail);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Previewbild konnte nicht geladen werden";
+      const msg = err instanceof Error ? err.message : text.builder.errors.previewImageFailed;
       if (!silent) {
         setError(msg);
       }
@@ -307,7 +340,7 @@ const Builder = () => {
 
   const downloadMultiChapter = async (chapter: ChapterData) => {
     if (!chapter.youtubeUrl?.trim()) {
-      setError("Bitte URL fuer das Kapitel eingeben");
+      setError(text.builder.errors.chapterUrlMissing);
       return;
     }
     setError("");
@@ -330,7 +363,7 @@ const Builder = () => {
         ),
       }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "URL-Download fehlgeschlagen");
+      setError(err instanceof Error ? err.message : text.builder.errors.downloadFailed);
     } finally {
       setMultiDownloadLoadingId("");
     }
@@ -365,10 +398,10 @@ const Builder = () => {
     setBuilding(true);
     setError("");
     setProgress(0);
-    setStatusMessage("Starte Build...");
+    setStatusMessage(text.builder.status.startBuild);
     setStatusLog([]);
     lastPolledMessageRef.current = "";
-    appendLog("Forge gestartet");
+    appendLog(text.builder.status.started);
 
     try {
       let projectId = "";
@@ -382,29 +415,29 @@ const Builder = () => {
         }
       } else if (formData.inputMode === "splitter") {
         if (!splitterFile) {
-          throw new Error("Bitte Audio-Datei fuer Splitter-Modus waehlen");
+          throw new Error(text.builder.errors.splitterFileMissing);
         }
         const result = await api.uploadAudio(splitterFile, projectId || undefined);
         projectId = result.project_id;
         setLastDraftProjectId(projectId);
       } else if (formData.inputMode === "yt-multi") {
         if (!youtubeProjectId) {
-          throw new Error("Bitte zuerst YouTube-Kapitel laden");
+          throw new Error(text.builder.errors.youtubeChaptersMissing);
         }
         const missing = formData.chapters.find((ch) => !ch.sourceFileName);
         if (missing) {
-          throw new Error("Alle YouTube-Kapitel muessen geladen werden");
+          throw new Error(text.builder.errors.youtubeChaptersIncomplete);
         }
         projectId = youtubeProjectId;
       } else {
         if (!youtubeProjectId || !youtubeSourceFile) {
-          throw new Error("Bitte YouTube-Audio zuerst laden");
+          throw new Error(text.builder.errors.youtubeAudioMissing);
         }
         projectId = youtubeProjectId;
       }
 
       if (!projectId) {
-        throw new Error("Keine Audio-Quelle vorhanden");
+        throw new Error(text.builder.errors.audioSourceMissing);
       }
 
       if (formData.coverImage) {
@@ -423,7 +456,7 @@ const Builder = () => {
           source = youtubeSourceFile;
         }
         return {
-          title: ch.title || `Kapitel ${i + 1}`,
+          title: ch.title || text.chapterList.title(i + 1),
           source,
           start_time: ch.startTime ? parseTimestamp(ch.startTime) : undefined,
           end_time: ch.endTime ? parseTimestamp(ch.endTime) : undefined,
@@ -444,7 +477,7 @@ const Builder = () => {
 
       projectId = buildResult.project_id;
       setLastDraftProjectId(projectId);
-      appendLog(`Build-Job: ${projectId}`);
+      appendLog(text.builder.status.buildJob(projectId));
 
       const poll = setInterval(async () => {
         try {
@@ -461,11 +494,11 @@ const Builder = () => {
             setBuilding(false);
             if (status.status === "error") {
               setError(status.message);
-              appendLog(`ERROR: ${status.message}`);
+              appendLog(text.builder.status.error(status.message));
             } else {
               const finalId = status.project_id || projectId;
               setFinishedProjectId(finalId);
-              appendLog(`OK: ${finalId}`);
+              appendLog(text.builder.status.buildOk(finalId));
               if (labelConfig.enabled) {
                 void api.generateLabel({
                   project_id: finalId,
@@ -482,22 +515,22 @@ const Builder = () => {
                   bg_color: labelConfig.bgColor,
                   font_size: labelConfig.fontSize,
                 });
-                appendLog("Label-Generierung angefordert");
+                appendLog(text.builder.status.labelRequested);
               }
             }
           }
         } catch {
           clearInterval(poll);
           setBuilding(false);
-          setError("Verbindung zum Server verloren");
-          appendLog("ERROR: Verbindung zum Server verloren");
+          setError(text.builder.errors.connectionLost);
+          appendLog(text.builder.status.error(text.builder.errors.connectionLost));
         }
       }, 1000);
     } catch (err) {
       setBuilding(false);
-      const msg = err instanceof Error ? err.message : "Unbekannter Fehler";
+      const msg = err instanceof Error ? err.message : text.builder.errors.unknown;
       setError(msg);
-      appendLog(`ERROR: ${msg}`);
+      appendLog(text.builder.status.error(msg));
     }
   };
 
@@ -524,16 +557,8 @@ const Builder = () => {
       }
     }
     setFormData({
-      title: "",
-      series: "",
-      episodes: "",
-      language: "de-de",
-      category: "audio-play",
-      inputMode: "files",
-      chapters: [createEmptyChapter()],
-      bitrate: 96,
-      createCustomEntry: true,
-      generateLabel: false,
+      ...createInitialFormData(defaultMetadataLanguage),
+      coverImage: undefined,
     });
     setLabelConfig(defaultLabelConfig);
     setSplitterFile(undefined);
@@ -550,7 +575,7 @@ const Builder = () => {
     lastPolledMessageRef.current = "";
     lastDownloadedSourceUrlRef.current = "";
     autoFilledTitleRef.current = "";
-    appendLog("Neu gestartet");
+    appendLog(text.builder.status.reset);
   };
 
   const tracksForLabel = formData.chapters.map((ch) => ch.title).filter(Boolean);
@@ -559,70 +584,50 @@ const Builder = () => {
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <Title level={4}>Forge TAF</Title>
+      <Title level={4}>{text.builder.pageTitle}</Title>
 
-      <Card title="Metadaten">
+      <Card title={text.builder.cards.metadata}>
         <Form layout="vertical">
-          <Form.Item label="Titel" required>
+          <Form.Item label={text.common.title} required>
             <Input
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: sanitizeTitle(e.target.value) })}
-              placeholder="z.B. Bibi Blocksberg - Hexen gibt es doch"
+              placeholder={text.builder.fields.titlePlaceholder}
             />
           </Form.Item>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Form.Item label="Serie">
+            <Form.Item label={text.common.series}>
               <Input
                 value={formData.series}
                 onChange={(e) => setFormData({ ...formData, series: e.target.value })}
-                placeholder="z.B. Bibi Blocksberg"
+                placeholder={text.builder.fields.seriesPlaceholder}
               />
             </Form.Item>
-            <Form.Item label="Episode">
+            <Form.Item label={text.common.episode}>
               <Input
                 value={formData.episodes}
                 onChange={(e) => setFormData({ ...formData, episodes: e.target.value })}
-                placeholder="z.B. Hexen gibt es doch"
+                placeholder={text.builder.fields.episodePlaceholder}
               />
             </Form.Item>
-            <Form.Item label="Sprache">
+            <Form.Item label={text.common.language}>
               <Select
                 value={formData.language}
                 onChange={(val) => setFormData({ ...formData, language: val })}
-                options={[
-                  { value: "de-de", label: "Deutsch" },
-                  { value: "en-gb", label: "English (UK)" },
-                  { value: "en-us", label: "English (US)" },
-                  { value: "fr-fr", label: "Francais" },
-                  { value: "nl-nl", label: "Nederlands" },
-                  { value: "da-dk", label: "Dansk" },
-                  { value: "sv-se", label: "Svenska" },
-                  { value: "pl-pl", label: "Polski" },
-                  { value: "it-it", label: "Italiano" },
-                  { value: "es-es", label: "Espanol" },
-                  { value: "pt-pt", label: "Portugues" },
-                  { value: "fi-fi", label: "Suomi" },
-                ]}
+                options={metadataLanguageOptions}
               />
             </Form.Item>
-            <Form.Item label="Kategorie">
+            <Form.Item label={text.common.category}>
               <Select
                 value={formData.category}
                 onChange={(val) => setFormData({ ...formData, category: val })}
-                options={[
-                  { value: "audio-play", label: "Hoerspiel (96 kbps)" },
-                  { value: "audio-book", label: "Hoerbuch (96 kbps)" },
-                  { value: "music", label: "Musik (128 kbps)" },
-                  { value: "audio-play-songs", label: "Hoerspiel + Lieder (128 kbps)" },
-                  { value: "audio-book-songs", label: "Hoerbuch + Lieder (128 kbps)" },
-                  { value: "audio-play-educational", label: "Lern-Hoerspiel (96 kbps)" },
-                ]}
+                options={categoryOptions}
               />
             </Form.Item>
           </div>
           <Form.Item
-            label="Cover-Bild"
-            help="Bild wird im Kreis-Editor zugeschnitten (PNG/JPG/SVG)"
+            label={text.common.cover}
+            help={text.builder.fields.coverHelp}
           >
             <Upload
               beforeUpload={(file) => {
@@ -635,24 +640,24 @@ const Builder = () => {
               showUploadList={false}
             >
               <Button icon={<UploadOutlined />}>
-                {formData.coverImage ? formData.coverImage.name : "Cover auswaehlen"}
+                {formData.coverImage ? formData.coverImage.name : text.builder.buttons.chooseCover}
               </Button>
             </Upload>
           </Form.Item>
         </Form>
       </Card>
 
-      <Card title="Audio-Quelle">
+      <Card title={text.builder.cards.source}>
         <Form layout="vertical">
-          <Form.Item label="URL-Download erlauben (yt-dlp)">
+          <Form.Item label={text.builder.youtube.enable}>
             <Space>
               <Switch
                 checked={youtubeEnabled}
                 onChange={handleYoutubeToggle}
-                checkedChildren="An"
-                unCheckedChildren="Aus"
+                checkedChildren={text.builder.youtube.enabled}
+                unCheckedChildren={text.builder.youtube.disabled}
               />
-              <Text type="secondary">Aktiviert Download via yt-dlp (YouTube und weitere unterstuetzte Seiten)</Text>
+              <Text type="secondary">{text.builder.youtube.description}</Text>
             </Space>
           </Form.Item>
 
@@ -662,36 +667,37 @@ const Builder = () => {
             items={[
               {
                 key: "source-info",
-                label: "Wichtige Infos zu URL-Quellen",
+                label: text.builder.youtube.sourceInfoTitle,
                 children: (
                   <Space direction="vertical" size={4}>
-                    <Text>Getestete Quelle: YouTube (inkl. Kapitel-Import wenn vom Video bereitgestellt).</Text>
-                    <Text>Weitere Seiten koennen funktionieren, wenn sie von yt-dlp unterstuetzt und serverseitig erlaubt sind.</Text>
-                    <Text>Kapitel-Autofill ist derzeit fuer YouTube verfuegbar; andere Quellen oft ohne Kapitelmetadaten.</Text>
-                    <Text type="secondary">Bei Problemen helfen Debug-Modus, erneutes Laden oder spaeterer Retry (Rate-Limit/Geo/Policy).</Text>
+                    {text.builder.youtube.sourceInfo.map((line, index) => (
+                      <Text key={index} type={index === text.builder.youtube.sourceInfo.length - 1 ? "secondary" : undefined}>
+                        {line}
+                      </Text>
+                    ))}
                   </Space>
                 ),
               },
             ]}
           />
 
-          <Form.Item label="Eingabemodus">
+          <Form.Item label={text.builder.fields.inputMode}>
             <Select
               value={formData.inputMode}
               onChange={handleInputModeChange}
               options={[
-                { value: "files", label: "Einzelne Dateien pro Kapitel" },
-                { value: "splitter", label: "Eine Datei + Timestamps (Splitter)" },
-                { value: "yt-single", label: "URL: Ein Link = ein Kapitel (Trim)", disabled: !youtubeEnabled },
-                { value: "yt-splitter", label: "URL: Ein Link + manuelle Kapitel", disabled: !youtubeEnabled },
-                { value: "yt-auto", label: "URL: Ein Link + Auto-Kapitel (YouTube falls vorhanden)", disabled: !youtubeEnabled },
-                { value: "yt-multi", label: "URL: Mehrere Links", disabled: !youtubeEnabled },
+                { value: "files", label: text.builder.inputModes.files },
+                { value: "splitter", label: text.builder.inputModes.splitter },
+                { value: "yt-single", label: text.builder.inputModes.ytSingle, disabled: !youtubeEnabled },
+                { value: "yt-splitter", label: text.builder.inputModes.ytSplitter, disabled: !youtubeEnabled },
+                { value: "yt-auto", label: text.builder.inputModes.ytAuto, disabled: !youtubeEnabled },
+                { value: "yt-multi", label: text.builder.inputModes.ytMulti, disabled: !youtubeEnabled },
               ]}
             />
           </Form.Item>
 
           {formData.inputMode === "splitter" && (
-            <Form.Item label="Audio-Datei">
+            <Form.Item label={text.common.upload}>
               <Upload
                 beforeUpload={(file) => {
                   setSplitterFile(file);
@@ -701,7 +707,7 @@ const Builder = () => {
                 accept="audio/*"
               >
                 <Button icon={<UploadOutlined />}>
-                  {splitterFile ? splitterFile.name : "Audio-Datei waehlen"}
+                  {splitterFile ? splitterFile.name : text.builder.buttons.chooseAudio}
                 </Button>
               </Upload>
             </Form.Item>
@@ -709,7 +715,7 @@ const Builder = () => {
 
           {canUseYoutubeSingleSource && (
             <>
-              <Form.Item label="Quell-URL">
+              <Form.Item label={text.builder.fields.sourceUrl}>
                 <Input
                   value={youtubeUrl}
                   onChange={(e) => {
@@ -719,40 +725,45 @@ const Builder = () => {
                       setYoutubeSourceFile("");
                     }
                   }}
-                  placeholder="https://... (YouTube oder andere yt-dlp-Quelle)"
+                  placeholder={text.builder.fields.sourceUrlPlaceholder}
                 />
               </Form.Item>
               <Space wrap>
                 <Button onClick={loadYoutubeInfo} loading={youtubeLoading}>
-                  Infos laden
+                  {text.builder.buttons.loadInfo}
                 </Button>
                 <Button type="primary" onClick={downloadYoutubeSource} loading={youtubeLoading}>
-                  URL herunterladen + Quelle vorbereiten
+                  {text.builder.buttons.prepareSource}
                 </Button>
                 <Button
                   onClick={() => applyYoutubeThumbnail(youtubeUrl)}
                   loading={youtubeThumbLoading}
                   disabled={!youtubeUrl.trim()}
                 >
-                  Thumbnail/Previewbild als Cover
+                  {text.builder.buttons.useThumbnail}
                 </Button>
               </Space>
-              <Form.Item label="Cover aus Quell-Previewbild">
+              <Form.Item label={text.builder.fields.coverFromPreview}>
                 <Space>
                   <Switch
                     checked={youtubeAutoCover}
                     onChange={setYoutubeAutoCover}
-                    checkedChildren="Auto"
-                    unCheckedChildren="Manuell"
+                    checkedChildren={text.builder.youtube.auto}
+                    unCheckedChildren={text.builder.youtube.manual}
                   />
                   <Text type="secondary">
-                    Bei URL-Download automatisch Previewbild als Cover-Vorschlag laden
+                    {text.builder.youtube.autoCoverDescription}
                   </Text>
                 </Space>
               </Form.Item>
               {youtubeInfo && (
                 <Text type="secondary">
-                  Anbieter: {youtubeInfo.provider || "unbekannt"} | Titel: {youtubeInfo.title} | Dauer: {secondsToTimestamp(youtubeInfo.duration)} | Kapitel: {youtubeInfo.chapters.length}
+                  {text.builder.youtube.providerInfo(
+                    youtubeInfo.provider || "",
+                    youtubeInfo.title,
+                    secondsToTimestamp(youtubeInfo.duration),
+                    youtubeInfo.chapters.length
+                  )}
                 </Text>
               )}
             </>
@@ -760,8 +771,8 @@ const Builder = () => {
 
           {formData.inputMode === "yt-multi" && (
             <Space>
-              <Button onClick={downloadAllMulti}>Alle URL-Links laden</Button>
-              {youtubeProjectId && <Text type="secondary">Projekt: {youtubeProjectId}</Text>}
+              <Button onClick={downloadAllMulti}>{text.builder.buttons.loadAllUrls}</Button>
+              {youtubeProjectId && <Text type="secondary">{text.builder.youtube.projectLabel(youtubeProjectId)}</Text>}
             </Space>
           )}
         </Form>
@@ -784,14 +795,14 @@ const Builder = () => {
                 loading={multiDownloadLoadingId === chapter.id}
                 disabled={!chapter.youtubeUrl}
               >
-                Kapitel-URL laden: {chapter.title || "Unbenannt"}
+                {text.builder.chapterDownloadButton(chapter.title)}
               </Button>
             ))}
           </Space>
         )}
 
         {canUseYoutubeSingleSource && youtubeProjectId && youtubeSourceFile && (
-          <Card size="small" title="Quell-Vorschau" style={{ marginTop: 16 }}>
+          <Card size="small" title={text.builder.cards.preview} style={{ marginTop: 16 }}>
             <Space direction="vertical" style={{ width: "100%" }}>
               <audio
                 ref={previewRef}
@@ -801,7 +812,7 @@ const Builder = () => {
               />
               {formData.inputMode === "yt-single" && (
                 <Button onClick={startTrimPreview}>
-                  Vorschau mit Start/Ende abspielen
+                  {text.builder.buttons.playTrimPreview}
                 </Button>
               )}
             </Space>
@@ -809,13 +820,13 @@ const Builder = () => {
         )}
       </Card>
 
-      <Card title="Einstellungen">
+      <Card title={text.builder.cards.settings}>
         <Form layout="vertical">
           <Form.Item>
             <Space>
               <InfoCircleOutlined />
               <Text type="secondary">
-                Bitrate: {getBitrateForCategory(formData.category)} kbps (automatisch)
+                {text.builder.bitrateInfo(getBitrateForCategory(formData.category))}
               </Text>
             </Space>
           </Form.Item>
@@ -825,7 +836,7 @@ const Builder = () => {
               setFormData({ ...formData, createCustomEntry: e.target.checked })
             }
           >
-            Custom Tonie in TeddyCloud registrieren
+            {text.builder.buttons.registerCustom}
           </Checkbox>
         </Form>
       </Card>
@@ -848,7 +859,7 @@ const Builder = () => {
         disabled={!formData.title || formData.chapters.length === 0}
         block
       >
-        Forge TAF
+        {text.builder.buttons.forge}
       </Button>
 
       <CoverCropModal
@@ -866,7 +877,7 @@ const Builder = () => {
       />
 
       <Modal
-        title="Rechtlicher Hinweis zu URL-Downloads"
+        title={text.builder.legal.title}
         open={youtubeConsentOpen}
         onCancel={() => {
           setYoutubeConsentOpen(false);
@@ -874,7 +885,7 @@ const Builder = () => {
         }}
         onOk={() => {
           if (!youtubeConsentChecked) {
-            message.error("Bitte Hinweis bestaetigen");
+            message.error(text.builder.errors.confirmConsent);
             return;
           }
           window.localStorage.setItem(YOUTUBE_CONSENT_KEY, "true");
@@ -882,34 +893,34 @@ const Builder = () => {
           setYoutubeConsentOpen(false);
           setYoutubeConsentChecked(false);
         }}
-        okText="Ich akzeptiere"
-        cancelText="Abbrechen"
+        okText={text.builder.legal.accept}
+        cancelText={text.common.cancel}
       >
         <Space direction="vertical">
           <Text>
-            Du darfst nur Inhalte laden, fuer die du Nutzungsrechte hast. Urheberrechtlich geschuetzte Inhalte ohne Erlaubnis zu speichern oder weiterzugeben ist unzulaessig.
+            {text.builder.legal.text1}
           </Text>
           <Text>
-            Du bestaetigst, dass du den Download nur rechtmaessig und in eigener Verantwortung nutzt.
+            {text.builder.legal.text2}
           </Text>
           <Checkbox
             checked={youtubeConsentChecked}
             onChange={(e) => setYoutubeConsentChecked(e.target.checked)}
           >
-            Ich habe den Hinweis gelesen und akzeptiere ihn.
+            {text.builder.legal.checkbox}
           </Checkbox>
         </Space>
       </Modal>
 
       {finishedProjectId && (
-        <Card title="Fertig!">
+        <Card title={text.builder.cards.done}>
           <Space>
             <Button
               icon={<DownloadOutlined />}
               type="link"
               href={`/api/export/zip/${finishedProjectId}`}
             >
-              ZIP herunterladen
+              {text.builder.buttons.downloadZip}
             </Button>
             {labelConfig.enabled && (
               <Button
@@ -917,21 +928,21 @@ const Builder = () => {
                 href={`/api/label/preview/${finishedProjectId}`}
                 target="_blank"
               >
-                Label PDF ansehen
+                {text.builder.buttons.viewLabelPdf}
               </Button>
             )}
             <Button icon={<ClearOutlined />} onClick={() => void resetForge()}>
-              Neu
+              {text.builder.buttons.reset}
             </Button>
           </Space>
         </Card>
       )}
 
-      <Card title="Forge Status (CLI)">
+      <Card title={text.builder.cards.status}>
         <Space direction="vertical" style={{ width: "100%" }}>
           <Progress percent={progress} status={error ? "exception" : building ? "active" : "normal"} />
           <Text type={error ? "danger" : "secondary"}>
-            {error ? `Fehler: ${error}` : statusMessage || "Bereit"}
+            {error ? text.builder.status.error(error) : statusMessage || text.builder.status.readyLabel}
           </Text>
           <div
             style={{
@@ -948,17 +959,17 @@ const Builder = () => {
               whiteSpace: "pre-wrap",
             }}
           >
-            {statusLog.length ? statusLog.join("\n") : ">> ready"}
+            {statusLog.length ? statusLog.join("\n") : text.builder.status.ready}
           </div>
           <Space>
             {(finishedProjectId || error) && (
               <Button icon={<ClearOutlined />} onClick={() => void resetForge()}>
-                Neu
+                {text.builder.buttons.reset}
               </Button>
             )}
             {error && statusLog.length > 0 && (
               <Button icon={<DownloadOutlined />} onClick={downloadErrorLog}>
-                Error-Log herunterladen
+                {text.builder.buttons.downloadErrorLog}
               </Button>
             )}
           </Space>
