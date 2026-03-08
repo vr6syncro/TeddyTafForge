@@ -28,38 +28,25 @@ router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 def _scan_project(project_dir: Path) -> dict:
     """Liest Metadaten eines Projektordners."""
+    try:
+        project_meta = _compose_project_metadata(project_dir)
+    except HTTPException:
+        project_meta = {}
     meta: dict = {
         "name": project_dir.name,
-        "title": project_dir.name,
-        "series": "",
-        "episodes": "",
-        "language": "",
-        "category": "",
-        "audio_id": "",
-        "taf_file": "",
-        "chapters": [],
+        "title": str(project_meta.get("title") or project_dir.name),
+        "series": str(project_meta.get("series") or ""),
+        "episodes": str(project_meta.get("episodes") or ""),
+        "language": str(project_meta.get("language") or ""),
+        "category": str(project_meta.get("category") or ""),
+        "audio_id": str(project_meta.get("audio_id") or ""),
+        "taf_file": str(project_meta.get("taf_file") or ""),
+        "chapters": project_meta.get("chapters") or [],
         "size_bytes": 0,
         "created": "",
         "has_cover": False,
         "has_label": False,
     }
-
-    # {titel}.json suchen (erste .json die nicht tonie.json heisst)
-    for json_file in project_dir.glob("*.json"):
-        try:
-            data = json.loads(json_file.read_text(encoding="utf-8"))
-            if isinstance(data, dict) and "audio_id" in data:
-                meta["title"] = data.get("title", project_dir.name)
-                meta["series"] = data.get("series", "")
-                meta["episodes"] = data.get("episodes", "")
-                meta["language"] = data.get("language", "")
-                meta["category"] = data.get("category", "")
-                meta["audio_id"] = data.get("audio_id", "")
-                meta["taf_file"] = data.get("taf_file", "")
-                meta["chapters"] = data.get("chapters", [])
-                break
-        except (json.JSONDecodeError, OSError):
-            continue
 
     # TAF-Datei suchen
     for taf in project_dir.glob("*.taf"):
@@ -163,6 +150,98 @@ def _read_project_meta_json(project_dir: Path) -> dict:
     return {}
 
 
+def _find_matching_custom_entry(audio_id: str = "", title: str = "", series: str = "") -> dict:
+    audio_id = str(audio_id or "").strip()
+    title = str(title or "").strip()
+    series = str(series or "").strip()
+
+    for entry in _read_custom_json():
+        if audio_id and audio_id in _extract_audio_ids(entry):
+            return entry
+        if title and entry.get("title") == title and str(entry.get("series") or "") == series:
+            return entry
+    return {}
+
+
+def _compose_project_metadata(
+    project_dir: Path,
+    title_hint: str = "",
+    series_hint: str = "",
+    episodes_hint: str = "",
+) -> dict:
+    taf_files = sorted(project_dir.glob("*.taf"))
+    if not taf_files:
+        raise HTTPException(400, "Keine TAF-Datei im Projekt gefunden")
+    taf_file = taf_files[0]
+
+    header_info = _parse_taf_header(taf_file)
+    existing = _read_project_meta_json(project_dir)
+    existing_title = str(existing.get("title") or "").strip()
+    existing_series = str(existing.get("series") or "").strip()
+    custom_entry = _find_matching_custom_entry(
+        audio_id=str(existing.get("audio_id") or header_info.get("audio_id") or ""),
+        title=existing_title or title_hint or taf_file.stem,
+        series=existing_series or series_hint,
+    )
+
+    title = (
+        existing_title
+        or str(custom_entry.get("title") or "").strip()
+        or title_hint
+        or taf_file.stem
+    )
+    series = (
+        existing_series
+        or str(custom_entry.get("series") or "").strip()
+        or series_hint
+        or ""
+    )
+
+    chapters_meta = existing.get("chapters") if isinstance(existing.get("chapters"), list) else []
+    tracks_meta = existing.get("tracks") if isinstance(existing.get("tracks"), list) else []
+    custom_tracks = custom_entry.get("tracks") if isinstance(custom_entry.get("tracks"), list) else []
+
+    chapter_titles: list[str] = []
+    if chapters_meta:
+        for i, ch in enumerate(chapters_meta):
+            if isinstance(ch, dict):
+                chapter_titles.append(str(ch.get("title") or f"Kapitel {i + 1}"))
+    elif tracks_meta:
+        chapter_titles = [str(t) for t in tracks_meta if str(t).strip()]
+    elif custom_tracks:
+        chapter_titles = [str(t) for t in custom_tracks if str(t).strip()]
+    else:
+        count = max(1, int(header_info.get("track_count") or 0))
+        chapter_titles = [f"Kapitel {i + 1}" for i in range(count)]
+
+    custom_hashes = custom_entry.get("hash") if isinstance(custom_entry.get("hash"), list) else []
+    custom_audio_ids = custom_entry.get("audio_id") if isinstance(custom_entry.get("audio_id"), list) else []
+
+    return {
+        "audio_id": str(
+            existing.get("audio_id")
+            or (custom_audio_ids[0] if custom_audio_ids else "")
+            or header_info.get("audio_id")
+            or ""
+        ),
+        "hash": str(
+            existing.get("hash")
+            or (custom_hashes[0] if custom_hashes else "")
+            or header_info.get("sha1")
+            or ""
+        ),
+        "title": title,
+        "series": series,
+        "pic": str(existing.get("pic") or custom_entry.get("pic") or ""),
+        "chapters": [{"title": t} for t in chapter_titles],
+        "tracks": chapter_titles,
+        "taf_file": str(existing.get("taf_file") or taf_file.name),
+        "episodes": str(existing.get("episodes") or custom_entry.get("episodes") or episodes_hint or title),
+        "language": str(existing.get("language") or custom_entry.get("language") or "de-de"),
+        "category": str(existing.get("category") or custom_entry.get("category") or "audio-play"),
+    }
+
+
 def _safe_extract_zip(zf: zipfile.ZipFile | pyzipper.AESZipFile, extract_dir: Path) -> None:
     root = extract_dir.resolve()
     for member in zf.infolist():
@@ -222,47 +301,12 @@ def _normalize_project_metadata(
     series_hint: str = "",
     episodes_hint: str = "",
 ) -> dict:
-    taf_files = sorted(project_dir.glob("*.taf"))
-    if not taf_files:
-        raise HTTPException(400, "Keine TAF-Datei im Projekt gefunden")
-    taf_file = taf_files[0]
-
-    header_info = _parse_taf_header(taf_file)
-    existing = _read_project_meta_json(project_dir)
-
-    title = (
-        existing.get("title")
-        or title_hint
-        or taf_file.stem
+    project_meta = _compose_project_metadata(
+        project_dir,
+        title_hint=title_hint,
+        series_hint=series_hint,
+        episodes_hint=episodes_hint,
     )
-    series = existing.get("series") or series_hint or ""
-    chapters_meta = existing.get("chapters") if isinstance(existing.get("chapters"), list) else []
-    tracks_meta = existing.get("tracks") if isinstance(existing.get("tracks"), list) else []
-
-    chapter_titles: list[str] = []
-    if chapters_meta:
-        for i, ch in enumerate(chapters_meta):
-            if isinstance(ch, dict):
-                chapter_titles.append(str(ch.get("title") or f"Kapitel {i + 1}"))
-    elif tracks_meta:
-        chapter_titles = [str(t) for t in tracks_meta if str(t).strip()]
-    else:
-        count = max(1, int(header_info.get("track_count") or 0))
-        chapter_titles = [f"Kapitel {i + 1}" for i in range(count)]
-
-    project_meta = {
-        "audio_id": str(existing.get("audio_id") or header_info.get("audio_id") or ""),
-        "hash": str(existing.get("hash") or header_info.get("sha1") or ""),
-        "title": str(title),
-        "series": str(series),
-        "pic": str(existing.get("pic") or ""),
-        "chapters": [{"title": t} for t in chapter_titles],
-        "tracks": chapter_titles,
-        "taf_file": taf_file.name,
-        "episodes": str(existing.get("episodes") or episodes_hint or title),
-        "language": str(existing.get("language") or "de-de"),
-        "category": str(existing.get("category") or "audio-play"),
-    }
 
     meta_name = f"{_sanitize_dirname(project_meta['title'])}.json"
     (project_dir / meta_name).write_text(
@@ -365,22 +409,8 @@ async def update_project_metadata(name: str, payload: MetadataUpdateRequest):
     if not project_dir.exists() or not project_dir.is_dir():
         raise HTTPException(404, "Project not found")
 
-    meta_json_path = None
-    meta_data: dict = {}
-    for json_file in project_dir.glob("*.json"):
-        if json_file.name == "tonie.json":
-            continue
-        try:
-            data = json.loads(json_file.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            continue
-        if isinstance(data, dict) and "audio_id" in data:
-            meta_json_path = json_file
-            meta_data = data
-            break
-
-    if meta_json_path is None:
-        raise HTTPException(404, "Keine Projekt-JSON gefunden")
+    meta_data = _normalize_project_metadata(project_dir)
+    meta_json_path = project_dir / f"{_sanitize_dirname(str(meta_data.get('title') or project_dir.name))}.json"
 
     updates: dict = {}
     if payload.title is not None:
@@ -404,6 +434,14 @@ async def update_project_metadata(name: str, payload: MetadataUpdateRequest):
         raise HTTPException(400, "Keine Felder zum Aktualisieren")
 
     meta_data.update(updates)
+    if "title" in updates:
+        new_meta_json_path = project_dir / f"{_sanitize_dirname(str(meta_data.get('title') or project_dir.name))}.json"
+        if new_meta_json_path != meta_json_path and meta_json_path.exists():
+            try:
+                meta_json_path.unlink()
+            except OSError:
+                pass
+        meta_json_path = new_meta_json_path
     meta_json_path.write_text(
         json.dumps(meta_data, indent=2, ensure_ascii=False),
         encoding="utf-8",

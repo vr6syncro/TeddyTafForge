@@ -309,7 +309,7 @@ const CustomToniesEditor = () => {
               />
             </Form.Item>
 
-            <Divider orientation="left" plain>Audio-IDs</Divider>
+            <Divider titlePlacement="left" plain>Audio-IDs</Divider>
             {data.audio_id.map((aid, i) => (
               <Space key={i} style={{ marginBottom: 4, width: "100%" }}>
                 <Input
@@ -329,7 +329,7 @@ const CustomToniesEditor = () => {
               Audio-ID hinzufuegen
             </Button>
 
-            <Divider orientation="left" plain>SHA1-Hashes</Divider>
+            <Divider titlePlacement="left" plain>SHA1-Hashes</Divider>
             {data.hash.map((h, i) => (
               <Space key={i} style={{ marginBottom: 4, width: "100%" }}>
                 <Input
@@ -349,7 +349,7 @@ const CustomToniesEditor = () => {
               Hash hinzufuegen
             </Button>
 
-            <Divider orientation="left" plain>Tracks</Divider>
+            <Divider titlePlacement="left" plain>Tracks</Divider>
             {data.tracks.map((track, i) => (
               <Space key={i} style={{ marginBottom: 4, width: "100%" }}>
                 <Tag>{i + 1}</Tag>
@@ -556,7 +556,7 @@ const CustomToniesEditor = () => {
               </Form.Item>
             </div>
 
-            <Divider orientation="left" plain>Audio-IDs</Divider>
+            <Divider titlePlacement="left" plain>Audio-IDs</Divider>
             {editData.audio_id.map((aid, i) => (
               <Space key={i} style={{ marginBottom: 4 }}>
                 <Input
@@ -576,7 +576,7 @@ const CustomToniesEditor = () => {
               Audio-ID hinzufuegen
             </Button>
 
-            <Divider orientation="left" plain>Tracks</Divider>
+            <Divider titlePlacement="left" plain>Tracks</Divider>
             {editData.tracks.map((track, i) => (
               <Space key={i} style={{ marginBottom: 4 }}>
                 <Tag>{i + 1}</Tag>
