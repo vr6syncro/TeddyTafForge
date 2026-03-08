@@ -1,7 +1,7 @@
 {
   "pluginName": "TafForge",
   "author": "vr6syncro",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Custom Tonie TAF Builder - Audio konvertieren, Metadaten verwalten, Cover und Labels erstellen",
   "pluginHomepage": "https://github.com/vr6syncro/TeddyTafForge",
   "teddyCloudSection": "tonies",

@@ -4,11 +4,21 @@ Custom Tonie TAF Builder als Docker-Container neben TeddyCloud.
 
 Audio-Dateien konvertieren, Kapitel verwalten, Metadaten anlegen, Cover-Bilder zuweisen und Labels/Coins als PDF erstellen - alles in einer Web-Oberflaeche.
 
-> **Hinweis:** Dieses Projekt befindet sich in aktiver Entwicklung. Es koennen Fehler auftreten oder sich Funktionen aendern. Bug-Reports und Feedback sind willkommen unter [GitHub Issues](https://github.com/vr6syncro/TeddyTafForge/issues).
+> **Aktueller Release-Stand:** `v0.2.0` bringt den neuen TonieToolbox-nahen Encoderpfad mit, der problematische Kapitel-/YouTube-TAFs auf echter Toniebox stabilisiert.
+>
+> **Hinweis:** Dieses Projekt befindet sich weiter in aktiver Entwicklung. Bug-Reports und Feedback sind willkommen unter [GitHub Issues](https://github.com/vr6syncro/TeddyTafForge/issues).
+
+## Release v0.2.0
+
+- Neuer Toolbox-naher Encoderpfad: FFmpeg/libopus pro Kapitel, anschliessend OGG-Repacking mit 4K-Ausrichtung
+- Reale Toniebox-Probleme mit bestimmten Kapitel-/YouTube-TAFs beseitigt
+- Diagnose-Endpoint fuer TAF-Struktur, CRCs, Kapitel-Offsets und OGG-Pages
+- Release-Automation ergaenzt: Dependabot, CI sowie Sicherheits-/CVE-Scanning
 
 ## Features
 
 - **TAF-Erstellung**: Audio-Dateien (MP3, FLAC, WAV, OGG, M4A, ...) in das Toniebox TAF-Format konvertieren
+- **Neuer Encoder-Kern**: TonieToolbox-naher Buildpfad fuer robustere OGG-/Opus-Struktur auf echter Toniebox
 - **Online-Import via yt-dlp**: Optionaler Download von YouTube und weiteren unterstuetzten Seiten (mit Rechtshinweis), inkl. Single-Track, Auto-Kapitel, Multi-Link
 - **Kapitel-System**: Einzelne Dateien pro Kapitel oder eine Datei mit Timestamps (Splitter-Modus)
 - **Metadaten**: Automatische Registrierung als Custom Tonie in TeddyCloud (`tonies.custom.json`)
@@ -20,6 +30,7 @@ Audio-Dateien konvertieren, Kapitel verwalten, Metadaten anlegen, Cover-Bilder z
 - **Custom Tonies Editor**: `tonies.custom.json` direkt im Browser bearbeiten
 - **ZIP-Export**: Fertigen Tonie als ZIP-Paket herunterladen
 - **TeddyCloud-Plugin**: Direkter Link aus dem TeddyCloud-Menue
+- **GitHub-Automation**: Dependabot, CI-Builds und Trivy-/Dependency-Review-Scans fuer Release-Hygiene
 
 ## Schnellstart
 
@@ -175,7 +186,7 @@ Optional ein druckfertiges PDF:
 Klick auf "Forge TAF" startet den Build-Prozess:
 1. Audio-Dateien werden hochgeladen
 2. Audio wird in Opus/OGG konvertiert (48 kHz, Stereo)
-3. TAF-Datei wird mit korrektem Header erstellt (4K-Block-Alignment)
+3. TAF-Datei wird mit neuem FFmpeg/libopus-Encode plus Toolbox-nahem OGG-Repacking erstellt
 4. Metadaten werden in TeddyCloud registriert
 5. Optional: Label-PDF wird generiert
 
@@ -187,11 +198,11 @@ Klick auf "Forge TAF" startet den Build-Prozess:
 
 ## FAQ / Troubleshooting
 
-### Build bricht bei ca. 75% ab
+### Build bricht bei ca. 75% ab oder die Box blinkt rot
 
 Typische Meldungen: `Unexpected padding at granule`, `Not enough space in block`, `'B' format requires 0 <= number <= 255`
 
-Diese Edge-Cases sind im aktuellen Stand behoben. Falls es trotzdem auftritt:
+Die bekannte Klasse problematischer Kapitel-/YouTube-TAFs ist mit `v0.2.0` durch den neuen Encoderpfad adressiert. Falls es trotzdem auftritt:
 1. Container auf neuesten Stand bringen
 2. Build erneut starten
 3. Forge-Log exportieren und als Issue melden
@@ -220,31 +231,49 @@ cd TeddyTafForge
 docker build -t tafforge .
 ```
 
+Fuer lokale Nicht-Docker-Checks im Repo:
+
+```bash
+cd frontend && npm ci && npm run build
+python -m compileall backend
+```
+
 ## Technologie
 
 - **Frontend**: React 19, TypeScript, Vite, Ant Design (Dark Theme)
 - **Backend**: Python 3.12, FastAPI, uvicorn
-- **Audio**: FFmpeg + libopus (Opus-Encoding via ctypes)
-- **TAF**: Eigener Encoder mit Protobuf-Header und OGG-Stream (4K-Block-Alignment)
+- **Audio**: FFmpeg + libopus
+- **TAF**: Toolbox-naher Encoderpfad mit Protobuf-Header und OGG-Repacking (4K-Block-Alignment)
 - **Label**: reportlab (PDF-Generierung)
 - **Container**: Multi-Stage Docker Build (Node 22 Alpine + Python 3.12 slim)
+
+## GitHub Automation
+
+- **CI**: Frontend-Build und Backend-Compile-Checks auf `main` und `fix/**`
+- **Dependabot**: Updates fuer GitHub Actions, Docker, Python und Frontend-NPM
+- **Security**: Trivy-Scan (Vulns, Secrets, Config) plus GitHub Dependency Review auf PRs
 
 ## Docker Tags
 
 | Tag | Wann wird gebaut? | Fuer wen? |
 |---|---|---|
 | `latest` | Bei jeder Code-Aenderung auf `main` | Empfohlen fuer die meisten Nutzer. Enthaelt immer den neuesten Code und die aktuellste yt-dlp Version. |
+| `<semver>` | Bei Git-Tags wie `v0.2.0` | Reproduzierbare Release-Staende, z.B. `ghcr.io/vr6syncro/teddytafforge:0.2.0` |
 | `autoupdate` | Taeglich automatisch, sobald eine neue yt-dlp Version erscheint | Ideal wenn du keine Code-Updates brauchst, aber yt-dlp immer aktuell haben willst (z.B. bei YouTube-Aenderungen). |
 | `autoupdate-ytdlp-<version>` | Einmalig pro yt-dlp Release | Zum Pinnen auf eine bestimmte yt-dlp Version, z.B. `autoupdate-ytdlp-2025.01.15`. |
 
 **Welchen Tag soll ich nehmen?**
 
 - **`latest`** ist die beste Wahl fuer die meisten Nutzer. Du bekommst alle neuen Features, Bugfixes und die aktuellste yt-dlp Version.
+- **`0.2.0`** ist der feste Release-Tag fuer den neuen Toolbox-nahen Encoderstand.
 - **`autoupdate`** ist sinnvoll, wenn du TafForge produktiv nutzt und nicht bei jedem Code-Update wechseln willst, aber trotzdem moechtest, dass YouTube-Downloads funktionieren, wenn YouTube seine Schnittstellen aendert.
 
 ```yaml
 # Standard (empfohlen)
 image: ghcr.io/vr6syncro/teddytafforge:latest
+
+# Fester Release-Stand
+image: ghcr.io/vr6syncro/teddytafforge:0.2.0
 
 # Automatisches yt-dlp Update ohne Code-Aenderungen
 image: ghcr.io/vr6syncro/teddytafforge:autoupdate
