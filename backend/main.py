@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import setup_logging, DEBUG_MODE, set_debug
-from backend.routers import files, metadata, upload, build, label, export, projects, youtube
+from backend.routers import files, metadata, upload, build, label, export, projects, youtube, diagnostics
 
 setup_logging()
 
@@ -22,6 +22,7 @@ app.include_router(label.router)
 app.include_router(export.router)
 app.include_router(projects.router)
 app.include_router(youtube.router)
+app.include_router(diagnostics.router)
 
 
 @app.get("/api/health")

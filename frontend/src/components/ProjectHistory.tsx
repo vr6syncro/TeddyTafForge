@@ -351,6 +351,14 @@ const ProjectHistory = () => {
                           )}
                           <Button
                             size="small"
+                            type="link"
+                            href={api.projectTafDiagnosticsUrl(encodeURIComponent(project.name))}
+                            target="_blank"
+                          >
+                            Analyse
+                          </Button>
+                          <Button
+                            size="small"
                             icon={<EditOutlined />}
                             onClick={() => setEditingProject(project)}
                           >

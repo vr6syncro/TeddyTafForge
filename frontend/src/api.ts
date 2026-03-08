@@ -383,6 +383,8 @@ export const api = {
 
   exportZipUrl: (projectId: string) => `${BASE}/export/zip/${projectId}`,
   labelPreviewUrl: (projectId: string) => `${BASE}/label/preview/${projectId}`,
+  projectTafDiagnosticsUrl: (projectId: string, includePages = false) =>
+    `${BASE}/diagnostics/project/${projectId}/taf${includePages ? "?include_pages=true" : ""}`,
   youtubeAudioUrl: (projectId: string, filename: string) =>
     `${BASE}/youtube/audio/${encodeURIComponent(projectId)}/${encodeURIComponent(filename)}`,
 

@@ -211,23 +211,34 @@ def _build_opus_head() -> bytes:
     )
 
 
-def _build_opus_tags() -> bytes:
+def _append_opus_comment(buf: bytearray, pos: int, comment: bytes) -> int:
+    struct.pack_into("<I", buf, pos, len(comment))
+    pos += 4
+    buf[pos:pos + len(comment)] = comment
+    return pos + len(comment)
+
+
+def _build_opus_tags(bitrate: int, vbr: bool = True) -> bytes:
     """Build OpusTags comment packet, padded to exactly 436 bytes."""
     buf = bytearray(COMMENT_DATA_SIZE)
     buf[:8] = b"OpusTags"
     pos = 8
 
     vendor = b"TeddyTafForge"
-    struct.pack_into("<I", buf, pos, len(vendor))
-    pos += 4
-    buf[pos:pos + len(vendor)] = vendor
-    pos += len(vendor)
+    pos = _append_opus_comment(buf, pos, vendor)
 
-    # 1 comment (the padding)
-    struct.pack_into("<I", buf, pos, 1)
+    comments = [
+        b"version=dev",
+        b"encoder=libopus (via ctypes)",
+        f"encoder_options=--bitrate {bitrate} {'--vbr' if vbr else '--cbr'}".encode("ascii"),
+    ]
+    struct.pack_into("<I", buf, pos, len(comments))
     pos += 4
 
-    # Padding comment: "pad=..."
+    for comment in comments:
+        pos = _append_opus_comment(buf, pos, comment)
+
+    # Trailing padding comment: "pad=..."
     remain = COMMENT_DATA_SIZE - pos - 4
     struct.pack_into("<I", buf, pos, remain)
     pos += 4
@@ -313,7 +324,7 @@ class TafEncoder:
             self._write_audio(page)
 
         # Write OpusTags as separate page (like toniefile.c)
-        tags = _build_opus_tags()
+        tags = _build_opus_tags(self.bitrate, vbr=True)
         self._ogg.packetin(tags, 0)
         self._ogg_packet_count += 1
         page = self._ogg.flush()
