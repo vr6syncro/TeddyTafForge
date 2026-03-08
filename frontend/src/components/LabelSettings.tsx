@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Card, ColorPicker, Form, Input, Select, Segmented, Slider, Switch } from "antd";
 import type { Color } from "antd/es/color-picker";
+import { useUiI18n } from "../uiI18n";
 
 export interface LabelConfig {
   enabled: boolean;
@@ -86,6 +87,7 @@ const LabelPreview = ({
   coverFile?: File;
   tracks: string[];
 }) => {
+  const { text } = useUiI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -204,7 +206,7 @@ const LabelPreview = ({
             ctx.fillText(`... +${tracks.length - 8}`, cx, bottomY + trackFontSize, size - 20);
           }
         } else {
-          const line1 = config.textLine1 || title || "Titel";
+          const line1 = config.textLine1 || title || text.labelSettings.fallbackTitle;
           const line2 = config.textLine2 || series || "";
 
           const fontSize1 = Math.min(scaledFont * 1.2, radius / 4);
@@ -234,7 +236,7 @@ const LabelPreview = ({
     } else {
       drawContent();
     }
-  }, [config, title, series, coverFile, tracks]);
+  }, [config, title, series, coverFile, tracks, text]);
 
   return (
     <div style={{ display: "flex", justifyContent: "center", margin: "12px 0" }}>
@@ -256,6 +258,7 @@ const LabelSettings = ({
   coverFile,
   tracks = [],
 }: Props) => {
+  const { text } = useUiI18n();
   const update = (patch: Partial<LabelConfig>) => onChange({ ...config, ...patch });
 
   const handleColorChange = (_value: Color, hex: string) => {
@@ -264,13 +267,13 @@ const LabelSettings = ({
 
   return (
     <Card
-      title="Label / Coin PDF"
+      title={text.labelSettings.cardTitle}
       extra={
         <Switch
           checked={config.enabled}
           onChange={(checked) => update({ enabled: checked })}
-          checkedChildren="An"
-          unCheckedChildren="Aus"
+          checkedChildren={text.labelSettings.on}
+          unCheckedChildren={text.labelSettings.off}
         />
       }
     >
@@ -285,31 +288,31 @@ const LabelSettings = ({
           />
 
           <Form layout="vertical">
-            <Form.Item label="Druck-Modus">
+            <Form.Item label={text.labelSettings.printMode}>
               <Segmented
                 value={config.printMode}
                 onChange={(value) => update({ printMode: value as LabelConfig["printMode"] })}
                 options={[
-                  { value: "imageAndText", label: "Bild + Text" },
-                  { value: "onlyImage", label: "Nur Bild" },
-                  { value: "onlyText", label: "Nur Text" },
+                  { value: "imageAndText", label: text.labelSettings.printModeOptions.imageAndText },
+                  { value: "onlyImage", label: text.labelSettings.printModeOptions.onlyImage },
+                  { value: "onlyText", label: text.labelSettings.printModeOptions.onlyText },
                 ]}
                 block
               />
             </Form.Item>
 
-            <Form.Item label="Form">
+            <Form.Item label={text.labelSettings.form}>
               <Select
                 value={config.shape}
                 onChange={(value: "round" | "square") => update({ shape: value })}
                 options={[
-                  { value: "round", label: "Rund (Coin)" },
-                  { value: "square", label: "Eckig (Label)" },
+                  { value: "round", label: text.labelSettings.shapeOptions.round },
+                  { value: "square", label: text.labelSettings.shapeOptions.square },
                 ]}
               />
             </Form.Item>
 
-            <Form.Item label={`Groesse: ${config.diameterMm} mm`}>
+            <Form.Item label={text.labelSettings.size(config.diameterMm)}>
               <Slider
                 min={20}
                 max={80}
@@ -319,14 +322,14 @@ const LabelSettings = ({
             </Form.Item>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Form.Item label="Trackliste anzeigen" style={{ marginBottom: 8 }}>
+              <Form.Item label={text.labelSettings.showTracklist} style={{ marginBottom: 8 }}>
                 <Switch
                   checked={config.showTracklist}
                   onChange={(checked) => update({ showTracklist: checked })}
                   disabled={tracks.length === 0}
                 />
               </Form.Item>
-              <Form.Item label="Serie auf Bild" style={{ marginBottom: 8 }}>
+              <Form.Item label={text.labelSettings.showSeriesOnImage} style={{ marginBottom: 8 }}>
                 <Switch
                   checked={config.showSeriesOnImage}
                   onChange={(checked) => update({ showSeriesOnImage: checked })}
@@ -336,14 +339,14 @@ const LabelSettings = ({
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Form.Item label="Hintergrundfarbe">
+              <Form.Item label={text.labelSettings.backgroundColor}>
                 <ColorPicker
                   value={config.bgColor}
                   onChange={handleColorChange}
                   showText
                 />
               </Form.Item>
-              <Form.Item label={`Schriftgroesse: ${config.fontSize}`}>
+              <Form.Item label={text.labelSettings.fontSize(config.fontSize)}>
                 <Slider
                   min={6}
                   max={18}
@@ -353,20 +356,20 @@ const LabelSettings = ({
               </Form.Item>
             </div>
 
-            <Form.Item label="Text Zeile 1">
+            <Form.Item label={text.labelSettings.line1}>
               <Input
                 value={config.textLine1}
                 onChange={(e) => update({ textLine1: e.target.value })}
-                placeholder="Wird automatisch aus Titel uebernommen"
+                placeholder={text.labelSettings.line1Placeholder}
                 disabled={config.showTracklist}
               />
             </Form.Item>
 
-            <Form.Item label="Text Zeile 2">
+            <Form.Item label={text.labelSettings.line2}>
               <Input
                 value={config.textLine2}
                 onChange={(e) => update({ textLine2: e.target.value })}
-                placeholder="Wird automatisch aus Serie uebernommen"
+                placeholder={text.labelSettings.line2Placeholder}
               />
             </Form.Item>
           </Form>

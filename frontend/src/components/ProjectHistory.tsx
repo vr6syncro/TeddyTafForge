@@ -26,6 +26,7 @@ import {
 } from "@ant-design/icons";
 import { api } from "../api";
 import type { ProjectInfo } from "../api";
+import { useUiI18n } from "../uiI18n";
 import ProjectEditor from "./ProjectEditor";
 
 const { Title, Text } = Typography;
@@ -38,10 +39,10 @@ const formatBytes = (bytes: number): string => {
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 };
 
-const formatDate = (ts: string | number): string => {
+const formatDate = (ts: string | number, locale: string): string => {
   if (!ts) return "-";
   const d = new Date(typeof ts === "number" ? ts * 1000 : ts);
-  return d.toLocaleDateString("de-DE", {
+  return d.toLocaleDateString(locale, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -62,6 +63,7 @@ const triggerDownload = (blob: Blob, filename: string) => {
 };
 
 const ProjectHistory = () => {
+  const { text, locale } = useUiI18n();
   const [activeTab, setActiveTab] = useState("library");
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -102,7 +104,7 @@ const ProjectHistory = () => {
       setProjects(result.projects);
       setSelected((prev) => prev.filter((id) => result.projects.some((p) => p.name === id)));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Fehler beim Laden");
+      setError(err instanceof Error ? err.message : text.projectHistory.errors.load);
     } finally {
       setLoading(false);
     }
@@ -121,17 +123,17 @@ const ProjectHistory = () => {
       if (deleteWithCustom) {
         message.success(
           result.removed_custom > 0
-            ? `Projekt geloescht, ${result.removed_custom} Custom-Eintrag(e) entfernt`
-            : "Projekt geloescht, kein passender Custom-Eintrag gefunden"
+            ? text.projectHistory.messages.deletedWithCustom(result.removed_custom)
+            : text.projectHistory.messages.deletedWithoutCustomMatch
         );
       } else {
-        message.success("Projekt geloescht");
+        message.success(text.projectHistory.messages.deleted);
       }
       setDeleteModalOpen(false);
       setDeleteTarget(null);
       await loadProjects();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Fehler beim Loeschen");
+      setError(err instanceof Error ? err.message : text.projectHistory.errors.delete);
     }
   };
 
@@ -147,10 +149,10 @@ const ProjectHistory = () => {
     setError("");
     try {
       const res = await api.importZip(file, importCreateCustom);
-      message.success(`ZIP importiert: ${res.title}`);
+      message.success(text.projectHistory.messages.zipImported(res.title));
       await loadProjects();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "ZIP-Import fehlgeschlagen");
+      setError(err instanceof Error ? err.message : text.projectHistory.errors.zipImport);
     } finally {
       setImportZipBusy(false);
     }
@@ -168,13 +170,13 @@ const ProjectHistory = () => {
         episodes: tafEpisodes,
         createCustomEntry: importCreateCustom,
       });
-      message.success(`TAF importiert: ${res.title}`);
+      message.success(text.projectHistory.messages.tafImported(res.title));
       setTafTitle("");
       setTafSeries("");
       setTafEpisodes("");
       await loadProjects();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "TAF-Import fehlgeschlagen");
+      setError(err instanceof Error ? err.message : text.projectHistory.errors.tafImport);
     } finally {
       setImportTafBusy(false);
     }
@@ -191,12 +193,12 @@ const ProjectHistory = () => {
         importCustomJson: importBackupCustomJson,
         password: importPassword,
       });
-      const customText = res.merged_custom_json ? " + custom.json gemerged" : "";
-      const skippedText = res.skipped_count > 0 ? `, ${res.skipped_count} uebersprungen (bereits vorhanden)` : "";
-      message.success(`Backup importiert: ${res.imported_count} Projekt(e)${skippedText}${customText}`);
+      const customText = res.merged_custom_json ? text.projectHistory.messages.customMerged : "";
+      const skippedText = res.skipped_count > 0 ? text.projectHistory.messages.skippedExisting(res.skipped_count) : "";
+      message.success(text.projectHistory.messages.backupImported(res.imported_count, skippedText, customText));
       await loadProjects();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Backup-Import fehlgeschlagen");
+      setError(err instanceof Error ? err.message : text.projectHistory.errors.backupImport);
     } finally {
       setImportBackupBusy(false);
     }
@@ -205,7 +207,7 @@ const ProjectHistory = () => {
 
   const handleBackupExport = async () => {
     if (!selectedProjects.length) {
-      message.warning("Bitte mindestens ein Projekt auswaehlen");
+      message.warning(text.projectHistory.messages.selectProjectWarning);
       return;
     }
     setBackupBusy(true);
@@ -217,10 +219,10 @@ const ProjectHistory = () => {
         password: backupPassword,
       });
       triggerDownload(res.blob, res.filename);
-      message.success(`Backup erstellt: ${selectedProjects.length} Projekt(e)`);
+      message.success(text.projectHistory.messages.backupCreated(selectedProjects.length));
       setActiveTab("imports");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Backup-Export fehlgeschlagen");
+      setError(err instanceof Error ? err.message : text.projectHistory.errors.backupExport);
     } finally {
       setBackupBusy(false);
     }
@@ -243,9 +245,9 @@ const ProjectHistory = () => {
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <Title level={4} style={{ margin: 0 }}>Bibliothek</Title>
+        <Title level={4} style={{ margin: 0 }}>{text.projectHistory.title}</Title>
         <Space>
-          <Button onClick={loadProjects} loading={loading}>Aktualisieren</Button>
+          <Button onClick={loadProjects} loading={loading}>{text.common.refresh}</Button>
         </Space>
       </div>
 
@@ -257,14 +259,14 @@ const ProjectHistory = () => {
         items={[
           {
             key: "library",
-            label: "Bibliothek",
+            label: text.projectHistory.tabs.library,
             children: (
               <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                 <Card>
                   <Space direction="vertical" style={{ width: "100%" }}>
                     <Space style={{ width: "100%", justifyContent: "space-between" }}>
                       <Text>
-                        Auswahl: <Tag>{selectedCount}</Tag> von <Tag>{projects.length}</Tag>
+                        {text.projectHistory.fields.selection(selectedCount, projects.length)}
                       </Text>
                       <Space>
                         <Checkbox
@@ -272,10 +274,8 @@ const ProjectHistory = () => {
                           onChange={(e) =>
                             setSelected(e.target.checked ? projects.map((p) => p.name) : [])
                           }
-                        >
-                          Alle
-                        </Checkbox>
-                        <Button onClick={() => setSelected([])}>Auswahl leeren</Button>
+                        >{text.projectHistory.fields.selectAll}</Checkbox>
+                        <Button onClick={() => setSelected([])}>{text.projectHistory.buttons.clearSelection}</Button>
                       </Space>
                     </Space>
 
@@ -284,10 +284,10 @@ const ProjectHistory = () => {
                         checked={backupIncludeCustom}
                         onChange={(e) => setBackupIncludeCustom(e.target.checked)}
                       >
-                        Beim Backup `tonies.custom.json` mit aufnehmen
+                        {text.projectHistory.fields.includeCustomJson}
                       </Checkbox>
                       <Input.Password
-                        placeholder="Backup-Passwort (optional, fuer Import-Pruefung)"
+                        placeholder={text.projectHistory.fields.backupPasswordPlaceholder}
                         value={backupPassword}
                         onChange={(e) => setBackupPassword(e.target.value)}
                       />
@@ -298,13 +298,13 @@ const ProjectHistory = () => {
                         onClick={handleBackupExport}
                         disabled={selectedCount === 0}
                       >
-                        Auswahl als Backup-ZIP exportieren
+                        {text.projectHistory.buttons.exportBackup}
                       </Button>
                     </Space>
                   </Space>
                 </Card>
 
-                {projects.length === 0 && !loading && <Empty description="Noch keine Projekte" />}
+                {projects.length === 0 && !loading && <Empty description={text.projectHistory.empty.noProjects} />}
 
                 {projects.map((project) => {
                   const checked = selected.includes(project.name);
@@ -336,7 +336,7 @@ const ProjectHistory = () => {
                             type="link"
                             href={api.exportZipUrl(encodeURIComponent(project.name))}
                           >
-                            ZIP
+                            {text.projectHistory.buttons.zip}
                           </Button>
                           {project.has_label && (
                             <Button
@@ -346,7 +346,7 @@ const ProjectHistory = () => {
                               href={api.labelPreviewUrl(encodeURIComponent(project.name))}
                               target="_blank"
                             >
-                              Label
+                              {text.projectHistory.buttons.label}
                             </Button>
                           )}
                           <Button
@@ -355,14 +355,14 @@ const ProjectHistory = () => {
                             href={api.projectTafDiagnosticsUrl(encodeURIComponent(project.name))}
                             target="_blank"
                           >
-                            Analyse
+                            {text.projectHistory.buttons.diagnostics}
                           </Button>
                           <Button
                             size="small"
                             icon={<EditOutlined />}
                             onClick={() => setEditingProject(project)}
                           >
-                            Bearbeiten
+                            {text.common.edit}
                           </Button>
                           <Button
                             size="small"
@@ -375,10 +375,10 @@ const ProjectHistory = () => {
                     >
                       <Space direction="vertical" size="small" style={{ width: "100%" }}>
                         <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-                          <Text type="secondary">Audio-ID: <Tag>{project.audio_id || "-"}</Tag></Text>
-                          <Text type="secondary">Groesse: {formatBytes(project.size_bytes)}</Text>
-                          <Text type="secondary">Erstellt: {formatDate(project.created)}</Text>
-                          <Text type="secondary">Kapitel: {project.chapters?.length ?? 0}</Text>
+                          <Text type="secondary">{text.projectHistory.project.audioId}: <Tag>{project.audio_id || "-"}</Tag></Text>
+                          <Text type="secondary">{text.projectHistory.project.size}: {formatBytes(project.size_bytes)}</Text>
+                          <Text type="secondary">{text.projectHistory.project.created}: {formatDate(project.created, locale)}</Text>
+                          <Text type="secondary">{text.projectHistory.project.chapters}: {project.chapters?.length ?? 0}</Text>
                         </div>
                         {project.chapters && project.chapters.length > 0 && (
                           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -396,28 +396,28 @@ const ProjectHistory = () => {
           },
           {
             key: "imports",
-            label: "Import/Backup",
+            label: text.projectHistory.tabs.imports,
             children: (
-              <Card title="Import & Restore">
+              <Card title={text.projectHistory.cards.importRestore}>
                 <Space direction="vertical" style={{ width: "100%" }}>
                   <Checkbox
                     checked={importCreateCustom}
                     onChange={(e) => setImportCreateCustom(e.target.checked)}
                   >
-                    Import auch in `tonies.custom.json` einpflegen
+                    {text.projectHistory.fields.importCreateCustom}
                   </Checkbox>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                    <Card size="small" title="Backup-Import (mehrere Projekte)">
+                    <Card size="small" title={text.projectHistory.cards.backupImport}>
                       <Space direction="vertical" style={{ width: "100%" }}>
                         <Checkbox
                           checked={importBackupCustomJson}
                           onChange={(e) => setImportBackupCustomJson(e.target.checked)}
                         >
-                          `tonies.custom.json` aus Backup mergen
+                          {text.projectHistory.fields.importBackupCustomJson}
                         </Checkbox>
                         <Input.Password
-                          placeholder="Backup-Passwort (falls gesetzt)"
+                          placeholder={text.projectHistory.fields.importPasswordPlaceholder}
                           value={importPassword}
                           onChange={(e) => setImportPassword(e.target.value)}
                         />
@@ -428,13 +428,13 @@ const ProjectHistory = () => {
                           disabled={importBackupBusy}
                         >
                           <Button icon={<InboxOutlined />} loading={importBackupBusy} block>
-                            Backup-ZIP auswaehlen
+                            {text.projectHistory.buttons.selectBackupZip}
                           </Button>
                         </Upload>
                       </Space>
                     </Card>
 
-                    <Card size="small" title="ZIP-Import (ein Projekt)">
+                    <Card size="small" title={text.projectHistory.cards.zipImport}>
                       <Upload
                         beforeUpload={handleZipImport}
                         showUploadList={false}
@@ -442,26 +442,26 @@ const ProjectHistory = () => {
                         disabled={importZipBusy}
                       >
                         <Button icon={<InboxOutlined />} loading={importZipBusy} block>
-                          ZIP auswaehlen
+                          {text.projectHistory.buttons.selectZip}
                         </Button>
                       </Upload>
                     </Card>
                   </div>
 
-                  <Card size="small" title="TAF-Import (einzelne Datei)">
+                  <Card size="small" title={text.projectHistory.cards.tafImport}>
                     <Space direction="vertical" style={{ width: "100%" }}>
                       <Input
-                        placeholder="Titel (optional)"
+                        placeholder={text.projectHistory.fields.tafTitlePlaceholder}
                         value={tafTitle}
                         onChange={(e) => setTafTitle(e.target.value)}
                       />
                       <Input
-                        placeholder="Serie (optional)"
+                        placeholder={text.projectHistory.fields.tafSeriesPlaceholder}
                         value={tafSeries}
                         onChange={(e) => setTafSeries(e.target.value)}
                       />
                       <Input
-                        placeholder="Episode (optional)"
+                        placeholder={text.projectHistory.fields.tafEpisodePlaceholder}
                         value={tafEpisodes}
                         onChange={(e) => setTafEpisodes(e.target.value)}
                       />
@@ -472,7 +472,7 @@ const ProjectHistory = () => {
                         disabled={importTafBusy}
                       >
                         <Button icon={<UploadOutlined />} loading={importTafBusy} block>
-                          TAF auswaehlen
+                          {text.projectHistory.buttons.selectTaf}
                         </Button>
                       </Upload>
                     </Space>
@@ -485,32 +485,32 @@ const ProjectHistory = () => {
       />
 
       <Modal
-        title="Projekt loeschen"
+        title={text.projectHistory.deleteModal.title}
         open={deleteModalOpen}
         onCancel={() => {
           setDeleteModalOpen(false);
           setDeleteTarget(null);
         }}
         onOk={() => deleteTarget && void deleteProject(deleteTarget)}
-        okText="Loeschen"
+        okText={text.projectHistory.deleteModal.confirm}
         okButtonProps={{ danger: true }}
       >
         <Space direction="vertical">
           <Text>
-            Soll das Projekt `{deleteTarget?.title || deleteTarget?.name}` geloescht werden?
+            {text.projectHistory.deleteModal.message(deleteTarget?.title || deleteTarget?.name || "")}
           </Text>
           <Checkbox
             checked={deleteWithCustom}
             onChange={(e) => setDeleteWithCustom(e.target.checked)}
           >
-            Passende Eintraege in `tonies.custom.json` mit entfernen
+            {text.projectHistory.deleteModal.removeCustom}
           </Checkbox>
           <Checkbox
             checked={deleteByTitle}
             onChange={(e) => setDeleteByTitle(e.target.checked)}
             disabled={!deleteWithCustom}
           >
-            Falls Audio-ID fehlt: auch ueber Titel+Serie abgleichen
+            {text.projectHistory.deleteModal.removeByTitle}
           </Checkbox>
         </Space>
       </Modal>

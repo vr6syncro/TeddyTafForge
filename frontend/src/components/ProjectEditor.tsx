@@ -20,31 +20,13 @@ import {
 } from "@ant-design/icons";
 import { api } from "../api";
 import type { ProjectInfo } from "../api";
+import { getMetadataLanguageOptions, sanitizeMetadataText } from "../appPreferences";
+import { useUiI18n } from "../uiI18n";
 import CoverCropModal from "./CoverCropModal";
 import LabelSettings, { defaultLabelConfig } from "./LabelSettings";
 import type { LabelConfig } from "./LabelSettings";
 
 const { Title, Text } = Typography;
-
-const LANGUAGE_OPTIONS = [
-  { value: "de-de", label: "Deutsch" },
-  { value: "en-gb", label: "Englisch" },
-  { value: "fr-fr", label: "Franzoesisch" },
-  { value: "nl-be", label: "Niederlaendisch" },
-  { value: "es-es", label: "Spanisch" },
-  { value: "it-it", label: "Italienisch" },
-  { value: "pt-pt", label: "Portugiesisch" },
-  { value: "pl-pl", label: "Polnisch" },
-];
-
-const CATEGORY_OPTIONS = [
-  { value: "audio-play", label: "Hoerspiel" },
-  { value: "audio-book", label: "Hoerbuch" },
-  { value: "music", label: "Musik" },
-  { value: "audio-play-songs", label: "Hoerspiel mit Liedern" },
-  { value: "audio-book-songs", label: "Hoerbuch mit Liedern" },
-  { value: "audio-play-educational", label: "Lernhoerspiel" },
-];
 
 interface ProjectEditorProps {
   project: ProjectInfo;
@@ -52,6 +34,16 @@ interface ProjectEditorProps {
 }
 
 const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
+  const { text } = useUiI18n();
+  const metadataLanguageOptions = getMetadataLanguageOptions(text.metadata.languages);
+  const categoryOptions = [
+    { value: "audio-play", label: text.metadata.categories["audio-play"] },
+    { value: "audio-book", label: text.metadata.categories["audio-book"] },
+    { value: "music", label: text.metadata.categories.music },
+    { value: "audio-play-songs", label: text.metadata.categories["audio-play-songs"] },
+    { value: "audio-book-songs", label: text.metadata.categories["audio-book-songs"] },
+    { value: "audio-play-educational", label: text.metadata.categories["audio-play-educational"] },
+  ];
   const [metaForm] = Form.useForm();
   const [metaBusy, setMetaBusy] = useState(false);
   const [chapterTitles, setChapterTitles] = useState<string[]>([]);
@@ -67,11 +59,14 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
   const [error, setError] = useState("");
 
   const initFromProject = useCallback((p: ProjectInfo) => {
+    const safeTitle = sanitizeMetadataText(p.title) || p.name;
+    const safeSeries = sanitizeMetadataText(p.series);
+    const safeEpisodes = sanitizeMetadataText(p.episodes);
     metaForm.setFieldsValue({
-      title: p.title,
-      series: p.series,
-      episodes: p.episodes || "",
-      language: p.language || "de-de",
+      title: safeTitle,
+      series: safeSeries,
+      episodes: safeEpisodes,
+      language: p.language === "en-gb" ? "en-gb" : "de-de",
       category: p.category || "audio-play",
     });
     setChapterTitles(
@@ -100,7 +95,7 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
     try {
       const values = await metaForm.validateFields();
       await api.updateProjectMetadata(project.name, values);
-      message.success("Metadaten gespeichert");
+      message.success(text.projectEditor.savedMeta);
     } catch (err) {
       if (err instanceof Error) setError(err.message);
     } finally {
@@ -113,7 +108,7 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
     setError("");
     try {
       await api.updateProjectMetadata(project.name, { chapters: chapterTitles });
-      message.success("Kapitel-Titel gespeichert");
+      message.success(text.projectEditor.savedChapters);
     } catch (err) {
       if (err instanceof Error) setError(err.message);
     } finally {
@@ -130,7 +125,7 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
       setCoverKey(Date.now());
       setCoverUrl(api.projectCoverUrl(project.name));
       setCoverFile(croppedFile);
-      message.success("Cover aktualisiert");
+      message.success(text.projectEditor.updatedCover);
     } catch (err) {
       if (err instanceof Error) setError(err.message);
     } finally {
@@ -164,7 +159,7 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
         const body = await res.json().catch(() => ({ detail: res.statusText }));
         throw new Error(typeof body.detail === "string" ? body.detail : `HTTP ${res.status}`);
       }
-      message.success("Label generiert");
+      message.success(text.projectEditor.labelGenerated);
     } catch (err) {
       if (err instanceof Error) setError(err.message);
     } finally {
@@ -175,44 +170,44 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={onBack}>Zurueck</Button>
+        <Button icon={<ArrowLeftOutlined />} onClick={onBack}>{text.common.back}</Button>
         <Title level={4} style={{ margin: 0 }}>{project.title}</Title>
       </div>
 
       {error && <Alert type="error" message={error} closable onClose={() => setError("")} />}
 
       {/* Metadaten */}
-      <Card title="Metadaten">
+      <Card title={text.projectEditor.cards.metadata}>
         <Form form={metaForm} layout="vertical">
-          <Form.Item name="title" label="Titel" rules={[{ required: true, message: "Titel erforderlich" }]}>
+          <Form.Item name="title" label={text.common.title} rules={[{ required: true, message: text.projectEditor.fields.titleRequired }]}>
             <Input />
           </Form.Item>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Form.Item name="series" label="Serie">
+            <Form.Item name="series" label={text.common.series}>
               <Input />
             </Form.Item>
-            <Form.Item name="episodes" label="Episode">
+            <Form.Item name="episodes" label={text.common.episode}>
               <Input />
             </Form.Item>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Form.Item name="language" label="Sprache">
-              <Select options={LANGUAGE_OPTIONS} />
+            <Form.Item name="language" label={text.common.language}>
+              <Select options={metadataLanguageOptions} />
             </Form.Item>
-            <Form.Item name="category" label="Kategorie">
-              <Select options={CATEGORY_OPTIONS} />
+            <Form.Item name="category" label={text.common.category}>
+              <Select options={categoryOptions} />
             </Form.Item>
           </div>
           <Button type="primary" icon={<SaveOutlined />} loading={metaBusy} onClick={handleMetaSave}>
-            Metadaten speichern
+            {text.projectEditor.fields.saveMetadata}
           </Button>
         </Form>
       </Card>
 
       {/* Kapitel */}
-      <Card title="Kapitel">
+      <Card title={text.projectEditor.cards.chapters}>
         {chapterTitles.length === 0 ? (
-          <Text type="secondary">Keine Kapitel vorhanden</Text>
+          <Text type="secondary">{text.projectEditor.fields.noChapters}</Text>
         ) : (
           <Space direction="vertical" style={{ width: "100%" }}>
             {chapterTitles.map((title, idx) => (
@@ -233,7 +228,7 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
         <div style={{ marginTop: 12 }}>
           <Alert
             type="info"
-            message="Kapitel loeschen/hinzufuegen oder Audio aendern erfordert einen Neu-Build im Builder."
+            message={text.projectEditor.fields.chapterInfo}
             showIcon
             style={{ marginBottom: 12 }}
           />
@@ -244,26 +239,26 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
             onClick={handleChapterSave}
             disabled={chapterTitles.length === 0}
           >
-            Kapitel-Titel speichern
+            {text.projectEditor.fields.saveChapters}
           </Button>
         </div>
       </Card>
 
       {/* Cover */}
-      <Card title="Cover">
+      <Card title={text.projectEditor.cards.cover}>
         <Space direction="vertical" style={{ width: "100%" }}>
           {coverUrl ? (
             <div style={{ display: "flex", justifyContent: "center" }}>
               <img
                 key={coverKey}
                 src={`${coverUrl}?t=${coverKey}`}
-                alt="Cover"
+                alt={text.projectEditor.fields.coverAlt}
                 style={{ maxWidth: 256, maxHeight: 256, borderRadius: 8, border: "1px solid #303030" }}
               />
             </div>
           ) : (
             <div style={{ display: "flex", justifyContent: "center", padding: 32 }}>
-              <Text type="secondary"><PictureOutlined style={{ fontSize: 48 }} /><br />Kein Cover vorhanden</Text>
+              <Text type="secondary"><PictureOutlined style={{ fontSize: 48 }} /><br />{text.projectEditor.fields.noCover}</Text>
             </div>
           )}
           <Upload
@@ -276,7 +271,7 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
             accept="image/png,image/jpeg,image/svg+xml,image/webp"
           >
             <Button icon={<UploadOutlined />} loading={coverBusy}>
-              {coverUrl ? "Cover aendern" : "Cover hochladen"}
+              {coverUrl ? text.projectEditor.fields.changeCover : text.projectEditor.fields.uploadCover}
             </Button>
           </Upload>
         </Space>
@@ -293,7 +288,7 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
 
       {/* Label */}
       <Card
-        title="Label"
+        title={text.projectEditor.cards.label}
         extra={
           project.has_label ? (
             <Button
@@ -303,7 +298,7 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
               href={api.labelPreviewUrl(encodeURIComponent(project.name))}
               target="_blank"
             >
-              PDF anzeigen
+              {text.projectEditor.fields.showPdf}
             </Button>
           ) : null
         }
@@ -324,7 +319,7 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
               loading={labelBusy}
               onClick={handleLabelGenerate}
             >
-              Label generieren
+              {text.projectEditor.fields.generateLabel}
             </Button>
           </div>
         )}

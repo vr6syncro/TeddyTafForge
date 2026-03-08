@@ -1,6 +1,7 @@
 import json
 import io
 import logging
+import re
 import shutil
 import struct
 import tempfile
@@ -24,6 +25,25 @@ from backend.routers.metadata import (
 log = logging.getLogger("tafforge.projects")
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
+
+_PLACEHOLDER_METADATA_VALUES = {
+    "demo",
+    "copyright",
+    "copyright demo",
+    "demo copyright",
+}
+
+
+def _sanitize_metadata_text(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    normalized = re.sub(r"[©\"'()\[\]{}]+", " ", text.lower())
+    normalized = re.sub(r"[_-]+", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    if normalized in _PLACEHOLDER_METADATA_VALUES:
+        return ""
+    return text
 
 
 def _scan_project(project_dir: Path) -> dict:
@@ -152,13 +172,15 @@ def _read_project_meta_json(project_dir: Path) -> dict:
 
 def _find_matching_custom_entry(audio_id: str = "", title: str = "", series: str = "") -> dict:
     audio_id = str(audio_id or "").strip()
-    title = str(title or "").strip()
-    series = str(series or "").strip()
+    title = _sanitize_metadata_text(title)
+    series = _sanitize_metadata_text(series)
 
     for entry in _read_custom_json():
         if audio_id and audio_id in _extract_audio_ids(entry):
             return entry
-        if title and entry.get("title") == title and str(entry.get("series") or "") == series:
+        entry_title = _sanitize_metadata_text(entry.get("title"))
+        entry_series = _sanitize_metadata_text(entry.get("series"))
+        if title and entry_title == title and entry_series == series:
             return entry
     return {}
 
@@ -176,8 +198,8 @@ def _compose_project_metadata(
 
     header_info = _parse_taf_header(taf_file)
     existing = _read_project_meta_json(project_dir)
-    existing_title = str(existing.get("title") or "").strip()
-    existing_series = str(existing.get("series") or "").strip()
+    existing_title = _sanitize_metadata_text(existing.get("title"))
+    existing_series = _sanitize_metadata_text(existing.get("series"))
     custom_entry = _find_matching_custom_entry(
         audio_id=str(existing.get("audio_id") or header_info.get("audio_id") or ""),
         title=existing_title or title_hint or taf_file.stem,
@@ -186,14 +208,14 @@ def _compose_project_metadata(
 
     title = (
         existing_title
-        or str(custom_entry.get("title") or "").strip()
-        or title_hint
+        or _sanitize_metadata_text(custom_entry.get("title"))
+        or _sanitize_metadata_text(title_hint)
         or taf_file.stem
     )
     series = (
         existing_series
-        or str(custom_entry.get("series") or "").strip()
-        or series_hint
+        or _sanitize_metadata_text(custom_entry.get("series"))
+        or _sanitize_metadata_text(series_hint)
         or ""
     )
 
@@ -236,7 +258,12 @@ def _compose_project_metadata(
         "chapters": [{"title": t} for t in chapter_titles],
         "tracks": chapter_titles,
         "taf_file": str(existing.get("taf_file") or taf_file.name),
-        "episodes": str(existing.get("episodes") or custom_entry.get("episodes") or episodes_hint or title),
+        "episodes": (
+            _sanitize_metadata_text(existing.get("episodes"))
+            or _sanitize_metadata_text(custom_entry.get("episodes"))
+            or _sanitize_metadata_text(episodes_hint)
+            or title
+        ),
         "language": str(existing.get("language") or custom_entry.get("language") or "de-de"),
         "category": str(existing.get("category") or custom_entry.get("category") or "audio-play"),
     }
