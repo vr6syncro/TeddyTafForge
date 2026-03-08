@@ -1,612 +1,353 @@
-"""TAF encoder: Opus encoding + OGG packaging with 4K block alignment.
+"""TAF encoder using FFmpeg Opus output plus 4K OGG repacking.
 
-Mirrors toniefile.c from TeddyCloud. Uses libopus via ctypes for encoding
-and implements OGG page framing manually for precise 4K block control.
+The public API stays unchanged for the rest of the project:
+- `open()`
+- `new_chapter()`
+- `encode(pcm_bytes)`
+- `close()`
 
-Requires libopus (libopus.so.0 / libopus0 package) at runtime.
+Internally this now follows the TonieToolbox-style flow much more closely:
+1. accumulate PCM per chapter
+2. encode each chapter to a normal Ogg/Opus file via FFmpeg/libopus
+3. copy/normalize the first two pages
+4. repack the remaining Opus packets into 4K-aligned OGG pages
+5. write the TAF protobuf header
 """
 
-import ctypes
-import ctypes.util
 import hashlib
 import struct
-import sys
+import subprocess
+import tempfile
 import time
+import wave
 from pathlib import Path
 
 from .header import create_taf_header_block
-
-# === Constants (matching toniefile.h) ===
+from .repack import OggPage, OpusPacket
 
 TONIEFILE_FRAME_SIZE = 4096
-OPUS_FRAME_SIZE = 2880  # 60ms @ 48kHz
+TONIEFILE_FIRST_AUDIO_PAGE_SIZE = 0x0E00
+TONIEFILE_MAX_CHAPTERS = 100
 OPUS_CHANNELS = 2
 OPUS_SAMPLING_RATE = 48000
-OGG_HEADER_LENGTH = 27
-OPUS_PACKET_PAD = 64
-OPUS_PACKET_MINSIZE = 64
-TONIEFILE_PAD_END = 96
-TONIEFILE_MAX_CHAPTERS = 100
-COMMENT_DATA_SIZE = 0x1B4  # 436 bytes
-
-# Opus constants
-OPUS_OK = 0
-OPUS_APPLICATION_AUDIO = 2049
-OPUS_SET_BITRATE_REQUEST = 4002
-OPUS_SET_VBR_REQUEST = 4006
-OPUS_SET_EXPERT_FRAME_DURATION_REQUEST = 4040
-OPUS_FRAMESIZE_60_MS = 5006
+COMMENT_DATA_SIZE = 0x1B4
+MIN_SILENCE_PCM_BYTES = (OPUS_SAMPLING_RATE * OPUS_CHANNELS * 2) // 50  # 20ms stereo s16le
+TEDDY_BENCH_AUDIO_ID_DEDUCT = 0x50000000
 
 
-# === Load libopus ===
-
-def _load_opus():
-    candidates = []
-    lib_name = ctypes.util.find_library("opus")
-    if lib_name:
-        candidates.append(lib_name)
-    if sys.platform == "linux":
-        candidates.extend(["libopus.so.0", "libopus.so"])
-    elif sys.platform == "darwin":
-        candidates.extend(["libopus.0.dylib", "libopus.dylib"])
-    elif sys.platform == "win32":
-        candidates.extend(["opus.dll", "libopus-0.dll"])
-    for name in candidates:
-        try:
-            return ctypes.cdll.LoadLibrary(name)
-        except OSError:
-            continue
-    raise ImportError("libopus not found. Install libopus0 (apt-get install libopus0).")
+def generate_audio_id() -> int:
+    return int(time.time()) - TEDDY_BENCH_AUDIO_ID_DEDUCT
 
 
-_opus = None
-
-
-def _get_opus():
-    """Lazy-load libopus on first use."""
-    global _opus
-    if _opus is not None:
-        return _opus
-    _opus = _load_opus()
-
-    _opus.opus_encoder_create.argtypes = [
-        ctypes.c_int32, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_int),
-    ]
-    _opus.opus_encoder_create.restype = ctypes.c_void_p
-
-    _opus.opus_encode.argtypes = [
-        ctypes.c_void_p, ctypes.POINTER(ctypes.c_int16),
-        ctypes.c_int, ctypes.POINTER(ctypes.c_ubyte), ctypes.c_int32,
-    ]
-    _opus.opus_encode.restype = ctypes.c_int32
-
-    _opus.opus_encoder_ctl.restype = ctypes.c_int
-    _opus.opus_encoder_destroy.argtypes = [ctypes.c_void_p]
-    _opus.opus_encoder_destroy.restype = None
-
-    _opus.opus_packet_pad.argtypes = [
-        ctypes.POINTER(ctypes.c_ubyte), ctypes.c_int32, ctypes.c_int32,
-    ]
-    _opus.opus_packet_pad.restype = ctypes.c_int
-
-    _opus.opus_strerror.argtypes = [ctypes.c_int]
-    _opus.opus_strerror.restype = ctypes.c_char_p
-
-    return _opus
-
-
-def _encoder_ctl(enc, request, value):
-    opus = _get_opus()
-    opus.opus_encoder_ctl.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
-    return opus.opus_encoder_ctl(enc, request, value)
-
-
-# === OGG CRC-32 ===
-
-def _build_ogg_crc_table():
-    table = []
-    for i in range(256):
-        r = i << 24
-        for _ in range(8):
-            r = ((r << 1) ^ 0x04C11DB7) & 0xFFFFFFFF if r & 0x80000000 else (r << 1) & 0xFFFFFFFF
-        table.append(r)
-    return table
-
-
-_OGG_CRC_TABLE = _build_ogg_crc_table()
-
-
-def _ogg_crc32(data: bytes | bytearray) -> int:
-    crc = 0
-    for byte in data:
-        crc = ((crc << 8) ^ _OGG_CRC_TABLE[((crc >> 24) ^ byte) & 0xFF]) & 0xFFFFFFFF
-    return crc
-
-
-# === OGG Stream State ===
-
-class _OggStream:
-    """Minimal OGG stream state for page construction."""
-
-    def __init__(self, serial: int):
-        self.serial = serial
-        self.pageno = 0
-        self.lacing_values: list[int] = []
-        self.body_data = bytearray()
-        self._granule = 0
-
-    @property
-    def lacing_fill(self) -> int:
-        return len(self.lacing_values)
-
-    @property
-    def body_fill(self) -> int:
-        return len(self.body_data)
-
-    def packetin(self, data: bytes, granulepos: int, bos: bool = False, eos: bool = False):
-        self.body_data.extend(data)
-        plen = len(data)
-        while plen >= 255:
-            self.lacing_values.append(255)
-            plen -= 255
-        self.lacing_values.append(plen)
-        self._granule = granulepos
-        self._bos = bos
-        self._eos = eos
-
-    def flush(self) -> bytes | None:
-        if not self.lacing_values:
-            return None
-
-        # OGG page segment table uses 1 byte count (0..255 segments).
-        # Emit at most 255 lacing values per page and prefer packet boundary.
-        total_segments = len(self.lacing_values)
-        n_segments = min(255, total_segments)
-        if total_segments > 255 and self.lacing_values[n_segments - 1] == 255:
-            while n_segments > 1 and self.lacing_values[n_segments - 1] == 255:
-                n_segments -= 1
-
-        page_lacing = self.lacing_values[:n_segments]
-        body_len = sum(page_lacing)
-        page_body = bytes(self.body_data[:body_len])
-
-        header_type = 0
-        if getattr(self, "_bos", False):
-            header_type |= 0x02
-        is_last_chunk = n_segments == total_segments
-        if getattr(self, "_eos", False) and is_last_chunk:
-            header_type |= 0x04
-
-        header = struct.pack(
-            "<4sBBqIIIB",
-            b"OggS", 0, header_type,
-            self._granule, self.serial, self.pageno, 0, n_segments,
-        )
-        header += bytes(page_lacing)
-
-        page = bytearray(header + page_body)
-        crc = _ogg_crc32(page)
-        struct.pack_into("<I", page, 22, crc)
-
-        del self.lacing_values[:n_segments]
-        del self.body_data[:body_len]
-        self.pageno += 1
-        self._bos = False
-
-        return bytes(page)
-
-
-# === OpusHead + OpusTags ===
-
-def _build_opus_head() -> bytes:
-    return struct.pack(
-        "<8sBBHIhB",
-        b"OpusHead",
-        1,                    # version
-        OPUS_CHANNELS,        # channels
-        0x0138,               # pre-skip (312)
-        OPUS_SAMPLING_RATE,   # sample rate
-        0,                    # output gain
-        0,                    # channel mapping family
-    )
-
-
-def _append_opus_comment(buf: bytearray, pos: int, comment: bytes) -> int:
+def _add_opus_comment(buf: bytearray, pos: int, comment: bytes) -> int:
     struct.pack_into("<I", buf, pos, len(comment))
     pos += 4
     buf[pos:pos + len(comment)] = comment
     return pos + len(comment)
 
 
-def _build_opus_tags(bitrate: int, vbr: bool = True) -> bytes:
-    """Build OpusTags comment packet, padded to exactly 436 bytes."""
-    buf = bytearray(COMMENT_DATA_SIZE)
-    buf[:8] = b"OpusTags"
-    pos = 8
+def _check_identification_header(page: OggPage) -> None:
+    segment = page.segments[0]
+    unpacked = struct.unpack("<8sBBHLH", segment.data[0:18])
+    if unpacked[0] != b"OpusHead":
+        raise RuntimeError("Invalid opus file: OpusHead signature not found")
+    if unpacked[1] != 1:
+        raise RuntimeError("Invalid opus file: Opus version mismatch")
+    if unpacked[2] != OPUS_CHANNELS:
+        raise RuntimeError(f"Only stereo Opus files are supported, found {unpacked[2]} channels")
+    if unpacked[4] != OPUS_SAMPLING_RATE:
+        raise RuntimeError(f"Sample rate must be 48 kHz, found {unpacked[4]} Hz")
 
-    vendor = b"TeddyTafForge"
-    pos = _append_opus_comment(buf, pos, vendor)
+
+def _prepare_opus_tags(page: OggPage, bitrate: int, vbr: bool = True) -> OggPage:
+    page.segments.clear()
+
+    comment_data = bytearray(COMMENT_DATA_SIZE)
+    pos = 0
+    comment_data[pos:pos + 8] = b"OpusTags"
+    pos += 8
+
+    pos = _add_opus_comment(comment_data, pos, b"TeddyTafForge")
 
     comments = [
         b"version=dev",
-        b"encoder=libopus (via ctypes)",
+        b"encoder=libopus (via FFmpeg)",
         f"encoder_options=--bitrate {bitrate} {'--vbr' if vbr else '--cbr'}".encode("ascii"),
     ]
-    struct.pack_into("<I", buf, pos, len(comments))
+    struct.pack_into("<I", comment_data, pos, len(comments))
     pos += 4
 
     for comment in comments:
-        pos = _append_opus_comment(buf, pos, comment)
+        pos = _add_opus_comment(comment_data, pos, comment)
 
-    # Trailing padding comment: "pad=..."
-    remain = COMMENT_DATA_SIZE - pos - 4
-    struct.pack_into("<I", buf, pos, remain)
+    remain = len(comment_data) - pos - 4
+    struct.pack_into("<I", comment_data, pos, remain)
     pos += 4
-    buf[pos:pos + 4] = b"pad="
+    comment_data[pos:pos + 4] = b"pad="
+    comment_data = comment_data[:pos + remain]
 
-    return bytes(buf)
+    first_segment = True
+    remaining = bytes(comment_data)
+    while remaining:
+        chunk = remaining[:255]
+        segment = OpusPacket()
+        segment.size = len(chunk)
+        segment.data = chunk
+        segment.spanning_packet = len(remaining) > 255
+        segment.first_packet = first_segment
+        page.segments.append(segment)
+        remaining = remaining[255:]
+        first_segment = False
+
+    page.correct_values(0)
+    return page
 
 
-# === TAF Encoder ===
+def _copy_first_and_second_page(in_file, out_file, serial: int, sha1, bitrate: int, vbr: bool = True) -> None:
+    if not OggPage.seek_to_page_header(in_file):
+        raise RuntimeError("First OGG page not found")
+    page = OggPage(in_file)
+    page.serial_no = serial
+    page.checksum = page.calc_checksum()
+    _check_identification_header(page)
+    page.write_page(out_file, sha1)
 
-TEDDY_BENCH_AUDIO_ID_DEDUCT = 0x50000000
+    if not OggPage.seek_to_page_header(in_file):
+        raise RuntimeError("Second OGG page not found")
+    page = OggPage(in_file)
+    page.serial_no = serial
+    page.checksum = page.calc_checksum()
+    page = _prepare_opus_tags(page, bitrate, vbr)
+    page.write_page(out_file, sha1)
 
 
-def generate_audio_id() -> int:
-    """Generate audio_id as Unix-Timestamp minus TEDDY_BENCH_AUDIO_ID_DEDUCT."""
-    return int(time.time()) - TEDDY_BENCH_AUDIO_ID_DEDUCT
+def _skip_first_two_pages(in_file) -> None:
+    if not OggPage.seek_to_page_header(in_file):
+        raise RuntimeError("First OGG page not found")
+    page = OggPage(in_file)
+    _check_identification_header(page)
+    if not OggPage.seek_to_page_header(in_file):
+        raise RuntimeError("Second OGG page not found")
+    OggPage(in_file)
+
+
+def _read_all_remaining_pages(in_file) -> list[OggPage]:
+    pages: list[OggPage] = []
+    while OggPage.seek_to_page_header(in_file):
+        pages.append(OggPage(in_file))
+    return pages
+
+
+def _resize_pages(
+    old_pages: list[OggPage],
+    max_page_size: int,
+    first_page_size: int,
+    template_page: OggPage,
+    last_granule: int = 0,
+    start_no: int = 2,
+    set_last_page_flag: bool = False,
+) -> list[OggPage]:
+    new_pages: list[OggPage] = []
+    current_source_page = None
+    page_no = start_no
+    current_max_size = first_page_size
+    new_page = OggPage.from_page(template_page)
+    new_page.page_no = page_no
+
+    while old_pages or current_source_page is not None:
+        if current_source_page is None:
+            current_source_page = old_pages.pop(0)
+
+        packet_size = current_source_page.get_size_of_first_packet()
+        segment_count = current_source_page.get_segment_count_of_first_packet()
+
+        if (
+            packet_size + segment_count + new_page.get_page_size() <= current_max_size
+            and len(new_page.segments) + segment_count < 256
+        ):
+            for _ in range(segment_count):
+                new_page.segments.append(current_source_page.segments.pop(0))
+            if not current_source_page.segments:
+                current_source_page = None
+        else:
+            new_page.pad(current_max_size)
+            new_page.correct_values(last_granule)
+            last_granule = new_page.granule_position
+            new_pages.append(new_page)
+
+            new_page = OggPage.from_page(template_page)
+            page_no += 1
+            new_page.page_no = page_no
+            current_max_size = max_page_size
+
+    if new_page.segments:
+        if set_last_page_flag:
+            new_page.page_type = 4
+        new_page.pad(current_max_size)
+        new_page.correct_values(last_granule)
+        new_pages.append(new_page)
+
+    return new_pages
+
+
+def _write_taf_header(out_file, chapters: list[int], audio_id: int, sha1) -> None:
+    current_pos = out_file.tell()
+    audio_length = current_pos - TONIEFILE_FRAME_SIZE
+    header_block = create_taf_header_block(
+        sha1_hash=sha1.digest(),
+        num_bytes=audio_length,
+        audio_id=audio_id,
+        track_page_nums=chapters,
+    )
+    out_file.seek(0)
+    out_file.write(header_block)
+    out_file.seek(current_pos)
+
+
+def _write_pcm_wav(path: Path, pcm_data: bytes) -> None:
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(OPUS_CHANNELS)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(OPUS_SAMPLING_RATE)
+        wav_file.writeframes(pcm_data)
+
+
+def _encode_wav_to_opus(input_wav: Path, output_opus: Path, bitrate: int, vbr: bool = True) -> None:
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(input_wav),
+        "-c:a",
+        "libopus",
+        "-b:a",
+        f"{bitrate}k",
+        "-vbr",
+        "on" if vbr else "off",
+        "-application",
+        "audio",
+        "-frame_duration",
+        "20",
+        "-f",
+        "opus",
+        str(output_opus),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    except FileNotFoundError as exc:
+        raise RuntimeError("FFmpeg nicht gefunden. Stelle sicher, dass `ffmpeg` im Runtime-Image verfuegbar ist.") from exc
+    if result.returncode != 0:
+        raise RuntimeError(f"FFmpeg encode error: {result.stderr.strip()[:500]}")
 
 
 class TafEncoder:
-    """Encodes PCM audio to a TAF file with proper 4K block alignment.
-
-    Usage:
-        enc = TafEncoder("output.taf", bitrate=96)
-        enc.open()
-        enc.new_chapter()
-        enc.encode(pcm_bytes_chapter1)
-        enc.new_chapter()
-        enc.encode(pcm_bytes_chapter2)
-        enc.close()
-        sha1_hex = enc.sha1_hash_hex  # available after close()
-    """
-
     def __init__(self, output_path: str | Path, audio_id: int | None = None, bitrate: int = 96):
         self.output_path = Path(output_path)
         self.audio_id = audio_id if audio_id is not None else generate_audio_id()
         self.bitrate = bitrate
         self.sha1_hash: bytes = b""
         self.sha1_hash_hex: str = ""
-
-        self._file = None
-        self._sha1 = hashlib.sha1()
-        self._file_pos = 0
-        self._audio_length = 0
-        self._track_page_nums: list[int] = []
-        self._taf_block_num = 0
-
-        # Opus
-        self._enc = None
-        self._audio_frame = (ctypes.c_int16 * (OPUS_CHANNELS * OPUS_FRAME_SIZE))()
-        self._audio_frame_used = 0
-
-        # OGG
-        self._ogg = _OggStream(self.audio_id)
-        self._ogg_granule_position = 0
-        self._ogg_packet_count = 0
+        self._chapter_pcm: list[bytearray] = []
+        self._opened = False
 
     def open(self):
-        """Open TAF file and write initial header + OGG setup pages."""
-        self._file = open(self.output_path, "wb")
-
-        # Write placeholder header (will be overwritten on close)
-        self._file.write(b"\x00" * TONIEFILE_FRAME_SIZE)
-
-        # Init Opus encoder
-        err = ctypes.c_int(0)
-        opus = _get_opus()
-        self._enc = opus.opus_encoder_create(
-            OPUS_SAMPLING_RATE, OPUS_CHANNELS, OPUS_APPLICATION_AUDIO, ctypes.byref(err),
-        )
-        if err.value != OPUS_OK:
-            raise RuntimeError(f"opus_encoder_create failed: {opus.opus_strerror(err.value)}")
-
-        _encoder_ctl(self._enc, OPUS_SET_BITRATE_REQUEST, self.bitrate * 1000)
-        _encoder_ctl(self._enc, OPUS_SET_VBR_REQUEST, 1)
-        _encoder_ctl(self._enc, OPUS_SET_EXPERT_FRAME_DURATION_REQUEST, OPUS_FRAMESIZE_60_MS)
-
-        # Write OpusHead as BOS page (separate, like toniefile.c)
-        head = _build_opus_head()
-        self._ogg.packetin(head, 0, bos=True)
-        self._ogg_packet_count += 1
-        page = self._ogg.flush()
-        if page:
-            self._write_audio(page)
-
-        # Write OpusTags as separate page (like toniefile.c)
-        tags = _build_opus_tags(self.bitrate, vbr=True)
-        self._ogg.packetin(tags, 0)
-        self._ogg_packet_count += 1
-        page = self._ogg.flush()
-        if page:
-            self._write_audio(page)
+        self._chapter_pcm = []
+        self._opened = True
 
     def new_chapter(self):
-        """Mark the current position as start of a new chapter."""
-        if len(self._track_page_nums) >= TONIEFILE_MAX_CHAPTERS:
+        if not self._opened:
+            raise RuntimeError("TafEncoder is not open")
+        if len(self._chapter_pcm) >= TONIEFILE_MAX_CHAPTERS:
             raise ValueError(f"Maximum {TONIEFILE_MAX_CHAPTERS} chapters exceeded")
-        # For chapters after the first: flush pending OGG data and align to block
-        # boundary before recording the chapter offset. Without this, the offset
-        # points to the last page of the *previous* chapter instead of the first
-        # page of the new one (off-by-one bug).
-        if self._track_page_nums:
-            self._flush_ogg_pages()
-            if self._file_pos % TONIEFILE_FRAME_SIZE != 0:
-                self._encode_chapter_fill()
-        self._track_page_nums.append(self._taf_block_num)
+        self._chapter_pcm.append(bytearray())
 
     def encode(self, pcm_data: bytes):
-        """Encode raw PCM data (int16 LE, interleaved stereo, 48kHz).
+        if not self._opened:
+            raise RuntimeError("TafEncoder is not open")
+        if not self._chapter_pcm:
+            self.new_chapter()
+        self._chapter_pcm[-1].extend(pcm_data)
 
-        Args:
-            pcm_data: Raw PCM bytes. Length must be a multiple of 4 (2 channels * 2 bytes).
-        """
-        total_samples = len(pcm_data) // (2 * OPUS_CHANNELS)
-        sample_buf = (ctypes.c_int16 * (total_samples * OPUS_CHANNELS)).from_buffer_copy(pcm_data)
-        samples_processed = 0
+    def _build_from_opus_files(self, opus_paths: list[Path]) -> None:
+        sha1 = hashlib.sha1()
+        template_page = None
+        chapters: list[int] = []
+        total_granule = 0
+        next_page_no = 2
 
-        output_frame = (ctypes.c_ubyte * TONIEFILE_FRAME_SIZE)()
+        with open(self.output_path, "wb") as out_file:
+            out_file.write(b"\x00" * TONIEFILE_FRAME_SIZE)
 
-        while samples_processed < total_samples:
-            # Fill audio frame buffer
-            samples_needed = OPUS_FRAME_SIZE - self._audio_frame_used
-            samples_available = total_samples - samples_processed
-            samples_to_copy = min(samples_needed, samples_available)
+            for index, opus_path in enumerate(opus_paths):
+                with open(opus_path, "rb") as handle:
+                    first_audio_page_size = TONIEFILE_FIRST_AUDIO_PAGE_SIZE if next_page_no == 2 else TONIEFILE_FRAME_SIZE
 
-            src_offset = samples_processed * OPUS_CHANNELS
-            dst_offset = self._audio_frame_used * OPUS_CHANNELS
-            ctypes.memmove(
-                ctypes.byref(self._audio_frame, dst_offset * 2),
-                ctypes.byref(sample_buf, src_offset * 2),
-                samples_to_copy * OPUS_CHANNELS * 2,
-            )
-            self._audio_frame_used += samples_to_copy
-            samples_processed += samples_to_copy
+                    if next_page_no == 2:
+                        _copy_first_and_second_page(handle, out_file, self.audio_id, sha1, self.bitrate, True)
+                    else:
+                        _skip_first_two_pages(handle)
 
-            # Frame full -> encode
-            if self._audio_frame_used >= OPUS_FRAME_SIZE:
-                self._encode_frame(output_frame)
-                self._audio_frame_used = 0
+                    pages = _read_all_remaining_pages(handle)
+                    if not pages:
+                        raise RuntimeError(f"No Opus audio pages found in {opus_path.name}")
 
-    def _encode_frame(self, output_frame, eos: bool = False):
-        """Encode one Opus frame with 4K block alignment."""
-        # If the current block tail is too small for a valid packet, flush or fill
-        # and retry. 3 iterations: flush pending data, silence-fill tail, retry encode.
-        for _ in range(3):
-            page_used = (
-                (self._file_pos % TONIEFILE_FRAME_SIZE)
-                + OGG_HEADER_LENGTH
-                + self._ogg.lacing_fill
-                + self._ogg.body_fill
-            )
-            page_remain = TONIEFILE_FRAME_SIZE - page_used
+                    if template_page is None:
+                        template_page = OggPage.from_page(pages[0])
+                        template_page.serial_no = self.audio_id
 
-            # Convert page space to max opus packet size
-            frame_payload = (page_remain // 256) * 255 + (page_remain % 256) - 1
+                    chapters.append(0 if next_page_no == 2 else next_page_no)
+                    new_pages = _resize_pages(
+                        pages,
+                        TONIEFILE_FRAME_SIZE,
+                        first_audio_page_size,
+                        template_page,
+                        total_granule,
+                        next_page_no,
+                        set_last_page_flag=index == len(opus_paths) - 1,
+                    )
 
-            # Handle segment size edge case
-            reconstructed = (frame_payload // 255) + 1 + frame_payload
-            if page_remain != reconstructed and frame_payload > OPUS_PACKET_MINSIZE:
-                frame_payload -= OPUS_PACKET_MINSIZE
+                    for page in new_pages:
+                        page.write_page(out_file, sha1)
 
-            if frame_payload >= OPUS_PACKET_MINSIZE - 1:
-                break
+                    last_page = new_pages[-1]
+                    total_granule = last_page.granule_position
+                    next_page_no = last_page.page_no + 1
 
-            flushed = self._flush_ogg_pages()
-            if not flushed:
-                self._silence_fill_tail()
-        else:
-            raise RuntimeError(
-                f"Not enough space in block: payload={frame_payload}, remain={page_remain}"
-            )
-
-        # Encode
-        opus = _get_opus()
-        frame_len = opus.opus_encode(
-            self._enc, self._audio_frame, OPUS_FRAME_SIZE,
-            output_frame, frame_payload,
-        )
-        if frame_len <= 0:
-            raise RuntimeError(f"opus_encode failed: {opus.opus_strerror(frame_len)}")
-
-        # Pad if close to target size
-        if frame_payload - frame_len < OPUS_PACKET_PAD:
-            ret = opus.opus_packet_pad(output_frame, frame_len, frame_payload)
-            if ret < 0:
-                raise RuntimeError(f"opus_packet_pad failed: {opus.opus_strerror(ret)}")
-            frame_len = frame_payload
-
-        self._ogg_granule_position += OPUS_FRAME_SIZE
-
-        # Feed to OGG stream
-        packet_data = bytes(output_frame[:frame_len])
-        self._ogg.packetin(packet_data, self._ogg_granule_position, eos=eos)
-        self._ogg_packet_count += 1
-
-        # Check if block is full -> flush
-        page_used = (
-            (self._file_pos % TONIEFILE_FRAME_SIZE)
-            + OGG_HEADER_LENGTH
-            + self._ogg.lacing_fill
-            + self._ogg.body_fill
-        )
-        page_remain = TONIEFILE_FRAME_SIZE - page_used
-
-        if page_remain < TONIEFILE_PAD_END:
-            # Kleine Restbereiche am Blockende sind zulaessig.
-            # Wichtig ist nur, dass keine OGG-Page ueber die 4K-Grenze geht.
-            self._flush_ogg_pages()
-
-    def _flush_ogg_pages(self) -> bool:
-        flushed = False
-        while True:
-            page = self._ogg.flush()
-            if page is None:
-                break
-            flushed = True
-            prev = self._file_pos
-            self._write_audio(page)
-
-            if (prev // TONIEFILE_FRAME_SIZE) != (self._file_pos // TONIEFILE_FRAME_SIZE):
-                self._taf_block_num += 1
-                if self._file_pos % TONIEFILE_FRAME_SIZE:
-                    raise RuntimeError(f"Block alignment mismatch at 0x{self._file_pos:08X}")
-        return flushed
-
-    def _pad_to_block_boundary(self) -> bool:
-        """Pad with zero bytes until next 4K block boundary if needed.
-
-        This is required for rare tails where no valid packet can start in the
-        remaining block bytes and there is nothing pending to flush.
-        """
-        remain = TONIEFILE_FRAME_SIZE - (self._file_pos % TONIEFILE_FRAME_SIZE)
-        if remain == TONIEFILE_FRAME_SIZE:
-            return False
-        self._write_audio(b"\x00" * remain)
-        self._taf_block_num += 1
-        return True
-
-    def _encode_chapter_fill(self):
-        """Fill remaining block space at chapter boundaries via silence fill."""
-        self._silence_fill_tail()
-
-    def _silence_fill_tail(self):
-        """Fill the remaining block space with a silence Opus frame.
-
-        Used both at chapter boundaries (_encode_chapter_fill) and within chapters
-        (_encode_frame) when the block tail is too small for the next real audio frame.
-        Avoids raw zero-padding which breaks Toniebox OGG sync at any position.
-
-        The Opus packet is sized so the resulting OGG page fills the block exactly:
-          frame_payload = (page_remain // 256) * 255 + (page_remain % 256) - 1
-
-        Edge case when page_remain % 256 == 0: the standard formula produces a page
-        1 byte short (26 + N*256 instead of 27 + N*256). Fix: reduce page_remain by 29
-        so the first frame fills (remain-29) bytes, then recurse for the trailing 29 bytes.
-        Proof: adjusted page_remain = N*256-29, % 256 = 227, formula correct.
-
-        Falls back to zero-padding only for tails < 29 bytes (smaller than the
-        minimum possible OGG page: 27 header + 1 segment + 1 body byte).
-        """
-        remain = TONIEFILE_FRAME_SIZE - (self._file_pos % TONIEFILE_FRAME_SIZE)
-        if remain == TONIEFILE_FRAME_SIZE:
-            return  # Already block-aligned
-
-        # Minimum valid OGG page = 27 + 1 segment + 1 body byte = 29 bytes
-        if remain < 29:
-            self._pad_to_block_boundary()
-            return
-
-        page_remain = remain - OGG_HEADER_LENGTH
-
-        # Edge case: page_remain % 256 == 0 → formula gives OGG page 1 byte short.
-        # Shrink page_remain by 29 so first frame fills (remain-29) bytes; recurse
-        # to handle the trailing 29 bytes ((29-27)%256=2, formula correct there).
-        if page_remain % 256 == 0:
-            page_remain -= 29
-
-        frame_payload = (page_remain // 256) * 255 + (page_remain % 256) - 1
-        frame_payload = max(1, frame_payload)
-
-        opus = _get_opus()
-        output_frame = (ctypes.c_ubyte * TONIEFILE_FRAME_SIZE)()
-        silence = (ctypes.c_int16 * (OPUS_FRAME_SIZE * OPUS_CHANNELS))()
-
-        frame_len = opus.opus_encode(
-            self._enc, silence, OPUS_FRAME_SIZE, output_frame, frame_payload,
-        )
-        if frame_len <= 0:
-            self._pad_to_block_boundary()
-            return
-
-        # Always pad to exact target so the OGG page fills the block precisely
-        if frame_len < frame_payload:
-            ret = opus.opus_packet_pad(output_frame, frame_len, frame_payload)
-            if ret < 0:
-                self._pad_to_block_boundary()
-                return
-            frame_len = frame_payload
-
-        self._ogg_granule_position += OPUS_FRAME_SIZE
-        packet_data = bytes(output_frame[:frame_len])
-        self._ogg.packetin(packet_data, self._ogg_granule_position)
-        self._ogg_packet_count += 1
-        self._flush_ogg_pages()
-
-        # Recurse if bytes remain (happens when the edge-case split emits 2 frames)
-        new_remain = TONIEFILE_FRAME_SIZE - (self._file_pos % TONIEFILE_FRAME_SIZE)
-        if 0 < new_remain < TONIEFILE_FRAME_SIZE:
-            self._silence_fill_tail()
-
-    def _write_audio(self, data: bytes):
-        """Write audio data, update SHA1 and position."""
-        self._file.write(data)
-        self._sha1.update(data)
-        self._file_pos += len(data)
-        self._audio_length += len(data)
+            self.sha1_hash = sha1.digest()
+            self.sha1_hash_hex = self.sha1_hash.hex()
+            _write_taf_header(out_file, chapters, self.audio_id, sha1)
 
     def close(self):
-        """Finalize TAF: flush remaining audio, compute SHA1, write header.
+        if not self._opened:
+            return
 
-        After close(), sha1_hash and sha1_hash_hex are available.
-        """
-        # Encode remaining samples (zero-pad to full frame, like toniefile.c).
-        # Pass eos=True so the last audio packet's OGG page carries the EOS flag.
-        if self._audio_frame_used > 0 and self._enc:
-            output_frame = (ctypes.c_ubyte * TONIEFILE_FRAME_SIZE)()
-            remaining = OPUS_FRAME_SIZE - self._audio_frame_used
-            dst_offset = self._audio_frame_used * OPUS_CHANNELS
-            ctypes.memset(
-                ctypes.byref(self._audio_frame, dst_offset * 2),
-                0,
-                remaining * OPUS_CHANNELS * 2,
-            )
-            self._audio_frame_used = OPUS_FRAME_SIZE
-            self._encode_frame(output_frame, eos=True)
-            self._audio_frame_used = 0
+        if not self._chapter_pcm:
+            raise RuntimeError("No chapter audio available for TAF build")
 
-        # Flush any remaining OGG data as final page with EOS flag.
-        # This covers the rare case where the partial frame was flushed internally
-        # by _encode_frame but lacing_fill still has pending data.
-        if self._ogg.lacing_fill > 0 or self._ogg.body_fill > 0:
-            self._ogg._eos = True  # Mark end of stream (EOS bit in OGG page header)
-            page = self._ogg.flush()
-            if page:
-                self._write_audio(page)
+        with tempfile.TemporaryDirectory(prefix="tafforge-encoder-") as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            opus_paths: list[Path] = []
 
-        if self._enc:
-            _get_opus().opus_encoder_destroy(self._enc)
-            self._enc = None
+            for index, pcm in enumerate(self._chapter_pcm, start=1):
+                pcm_bytes = bytes(pcm) if pcm else b"\x00" * MIN_SILENCE_PCM_BYTES
+                wav_path = temp_dir / f"chapter_{index:03d}.wav"
+                opus_path = temp_dir / f"chapter_{index:03d}.opus"
+                _write_pcm_wav(wav_path, pcm_bytes)
+                _encode_wav_to_opus(wav_path, opus_path, self.bitrate, True)
+                opus_paths.append(opus_path)
 
-        self.sha1_hash = self._sha1.digest()
-        self.sha1_hash_hex = self.sha1_hash.hex()
+            self._build_from_opus_files(opus_paths)
 
-        header_block = create_taf_header_block(
-            sha1_hash=self.sha1_hash,
-            num_bytes=self._audio_length,
-            audio_id=self.audio_id,
-            track_page_nums=self._track_page_nums,
-        )
-
-        self._file.seek(0)
-        self._file.write(header_block)
-        self._file.close()
-        self._file = None
+        self._opened = False
+        self._chapter_pcm = []
 
     def __enter__(self):
         self.open()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._file:
+        if self._opened:
             self.close()
