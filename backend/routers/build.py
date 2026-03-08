@@ -205,6 +205,9 @@ async def _run_build(project_id: str, request: BuildRequest) -> None:
             "hash": sha1_hex,
             "title": request.title,
             "series": request.series,
+            "episodes": request.episodes or request.title,
+            "language": request.language,
+            "category": request.category,
             "pic": pic_url,
             "chapters": [
                 {"title": ch.title or f"Kapitel {i + 1}"}
