@@ -4,9 +4,16 @@ Custom Tonie TAF Builder als Docker-Container neben TeddyCloud.
 
 Audio-Dateien konvertieren, Kapitel verwalten, Metadaten anlegen, Cover-Bilder zuweisen und Labels/Coins als PDF erstellen - alles in einer Web-Oberflaeche.
 
-> **Aktueller Release-Stand:** `v0.2.0` bringt den neuen TonieToolbox-nahen Encoderpfad mit, der problematische Kapitel-/YouTube-TAFs auf echter Toniebox stabilisiert.
+> **Aktueller Release-Stand:** `v0.2.1` bringt die vollstaendige DE/EN-System-UI, Light-/Dark-Mode sowie neutrale Placeholder auf den bereits stabilisierten TonieToolbox-nahen Encoderpfad.
 >
 > **Hinweis:** Dieses Projekt befindet sich weiter in aktiver Entwicklung. Bug-Reports und Feedback sind willkommen unter [GitHub Issues](https://github.com/vr6syncro/TeddyTafForge/issues).
+
+## Release v0.2.1
+
+- Vollstaendige DE/EN-System-UI fuer Builder, Bibliothek, Editoren und Hilfsdialoge
+- Persistenter Sprachumschalter und Light-/Dark-Mode im Frontend
+- Neutrale Placeholder statt markenbezogener Beispieltexte und serverseitiges Bereinigen alter `demo`-Metadaten
+- Docker-Workflow baut jetzt auch `feat/**`-Branches fuer Test-Images
 
 ## Release v0.2.0
 
@@ -202,7 +209,7 @@ Klick auf "Forge TAF" startet den Build-Prozess:
 
 Typische Meldungen: `Unexpected padding at granule`, `Not enough space in block`, `'B' format requires 0 <= number <= 255`
 
-Die bekannte Klasse problematischer Kapitel-/YouTube-TAFs ist mit `v0.2.0` durch den neuen Encoderpfad adressiert. Falls es trotzdem auftritt:
+Die bekannte Klasse problematischer Kapitel-/YouTube-TAFs ist seit `v0.2.0` durch den neuen Encoderpfad adressiert. Falls es trotzdem auftritt:
 1. Container auf neuesten Stand bringen
 2. Build erneut starten
 3. Forge-Log exportieren und als Issue melden
@@ -258,14 +265,14 @@ python -m compileall backend
 | Tag | Wann wird gebaut? | Fuer wen? |
 |---|---|---|
 | `latest` | Bei jeder Code-Aenderung auf `main` | Empfohlen fuer die meisten Nutzer. Enthaelt immer den neuesten Code und die aktuellste yt-dlp Version. |
-| `<semver>` | Bei Git-Tags wie `v0.2.0` | Reproduzierbare Release-Staende, z.B. `ghcr.io/vr6syncro/teddytafforge:0.2.0` |
+| `<semver>` | Bei Git-Tags wie `v0.2.1` | Reproduzierbare Release-Staende, z.B. `ghcr.io/vr6syncro/teddytafforge:0.2.1` |
 | `autoupdate` | Taeglich automatisch, sobald eine neue yt-dlp Version erscheint | Ideal wenn du keine Code-Updates brauchst, aber yt-dlp immer aktuell haben willst (z.B. bei YouTube-Aenderungen). |
 | `autoupdate-ytdlp-<version>` | Einmalig pro yt-dlp Release | Zum Pinnen auf eine bestimmte yt-dlp Version, z.B. `autoupdate-ytdlp-2025.01.15`. |
 
 **Welchen Tag soll ich nehmen?**
 
 - **`latest`** ist die beste Wahl fuer die meisten Nutzer. Du bekommst alle neuen Features, Bugfixes und die aktuellste yt-dlp Version.
-- **`0.2.0`** ist der feste Release-Tag fuer den neuen Toolbox-nahen Encoderstand.
+- **`0.2.1`** ist der aktuelle feste Release-Tag mit UI-Sprachumschaltung, Theme-Switch und neutralen Placeholdern.
 - **`autoupdate`** ist sinnvoll, wenn du TafForge produktiv nutzt und nicht bei jedem Code-Update wechseln willst, aber trotzdem moechtest, dass YouTube-Downloads funktionieren, wenn YouTube seine Schnittstellen aendert.
 
 ```yaml
@@ -273,7 +280,7 @@ python -m compileall backend
 image: ghcr.io/vr6syncro/teddytafforge:latest
 
 # Fester Release-Stand
-image: ghcr.io/vr6syncro/teddytafforge:0.2.0
+image: ghcr.io/vr6syncro/teddytafforge:0.2.1
 
 # Automatisches yt-dlp Update ohne Code-Aenderungen
 image: ghcr.io/vr6syncro/teddytafforge:autoupdate
