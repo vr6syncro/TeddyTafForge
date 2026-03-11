@@ -21,6 +21,7 @@ from backend.config import (
     YTDLP_OPTIONS,
 )
 from backend.http_headers import content_disposition_attachment
+from backend.path_utils import resolve_project_dir, sanitize_uploaded_filename
 
 log = logging.getLogger("tafforge.youtube")
 
@@ -209,9 +210,7 @@ def _build_download_attempts(url: str, audio_dir: Path) -> list[dict]:
 
 
 def _ensure_project_dir(project_id: str) -> Path:
-    project_dir = CUSTOM_TAF_PATH / project_id
-    project_dir.mkdir(parents=True, exist_ok=True)
-    return project_dir
+    return resolve_project_dir(project_id, create=True)
 
 
 def _validate_url(url: str) -> None:
@@ -490,11 +489,8 @@ async def youtube_thumbnail(request: YoutubeThumbnailRequest):
 
 @router.get("/audio/{project_id:path}/{filename:path}")
 async def youtube_audio(project_id: str, filename: str):
-    source_dir = (CUSTOM_TAF_PATH / project_id / "source_audio").resolve()
-    source = (source_dir / filename).resolve()
-
-    if source_dir not in source.parents:
-        raise HTTPException(400, "Ungueltiger Dateipfad")
+    source_dir = resolve_project_dir(project_id) / "source_audio"
+    source = source_dir / sanitize_uploaded_filename(filename, fallback="audio")
     if not source.exists() or not source.is_file():
         raise HTTPException(404, "Audio-Datei nicht gefunden")
 

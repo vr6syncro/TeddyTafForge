@@ -64,6 +64,23 @@ const triggerDownload = (blob: Blob, filename: string) => {
 
 const ProjectHistory = () => {
   const { text, locale } = useUiI18n();
+  const toolbarStyle = {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap" as const,
+  };
+  const importGridStyle = {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+    gap: 12,
+  } as const;
+  const projectMetaGridStyle = {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gap: 12,
+  } as const;
   const [activeTab, setActiveTab] = useState("library");
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -244,9 +261,9 @@ const ProjectHistory = () => {
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={toolbarStyle}>
         <Title level={4} style={{ margin: 0 }}>{text.projectHistory.title}</Title>
-        <Space>
+        <Space wrap>
           <Button onClick={loadProjects} loading={loading}>{text.common.refresh}</Button>
         </Space>
       </div>
@@ -264,11 +281,11 @@ const ProjectHistory = () => {
               <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                 <Card>
                   <Space direction="vertical" style={{ width: "100%" }}>
-                    <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                    <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
                       <Text>
                         {text.projectHistory.fields.selection(selectedCount, projects.length)}
                       </Text>
-                      <Space>
+                      <Space wrap>
                         <Checkbox
                           checked={allSelected}
                           onChange={(e) =>
@@ -312,7 +329,14 @@ const ProjectHistory = () => {
                     <Card
                       key={project.name}
                       title={
-                        <Space>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            flexWrap: "wrap",
+                          }}
+                        >
                           <Checkbox
                             checked={checked}
                             onChange={(e) => {
@@ -324,12 +348,12 @@ const ProjectHistory = () => {
                             }}
                           />
                           <FolderOutlined />
-                          <span>{project.title}</span>
+                          <span style={{ wordBreak: "break-word" }}>{project.title}</span>
                           {project.series && <Tag>{project.series}</Tag>}
-                        </Space>
+                        </div>
                       }
                       extra={
-                        <Space>
+                        <Space wrap>
                           <Button
                             size="small"
                             icon={<DownloadOutlined />}
@@ -374,7 +398,7 @@ const ProjectHistory = () => {
                       }
                     >
                       <Space direction="vertical" size="small" style={{ width: "100%" }}>
-                        <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+                        <div style={projectMetaGridStyle}>
                           <Text type="secondary">{text.projectHistory.project.audioId}: <Tag>{project.audio_id || "-"}</Tag></Text>
                           <Text type="secondary">{text.projectHistory.project.size}: {formatBytes(project.size_bytes)}</Text>
                           <Text type="secondary">{text.projectHistory.project.created}: {formatDate(project.created, locale)}</Text>
@@ -407,7 +431,7 @@ const ProjectHistory = () => {
                     {text.projectHistory.fields.importCreateCustom}
                   </Checkbox>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div style={importGridStyle}>
                     <Card size="small" title={text.projectHistory.cards.backupImport}>
                       <Space direction="vertical" style={{ width: "100%" }}>
                         <Checkbox

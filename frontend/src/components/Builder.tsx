@@ -83,6 +83,12 @@ const createInitialFormData = (defaultMetadataLanguage: MetadataLanguage): Build
   generateLabel: false,
 });
 
+const responsiveGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 12,
+} as const;
+
 const Builder = ({ uiLanguage }: BuilderProps) => {
   const { text } = useUiI18n();
   const defaultMetadataLanguage = getDefaultMetadataLanguage(uiLanguage);
@@ -125,10 +131,19 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
   const autoFilledTitleRef = useRef("");
   const lastDownloadedSourceUrlRef = useRef("");
   const lastPolledMessageRef = useRef("");
+  const buildPollTimeoutRef = useRef<number | null>(null);
+  const buildPollRunRef = useRef(0);
 
   const appendLog = (line: string) => {
     const ts = new Date().toLocaleTimeString(text.locale, { hour12: false });
     setStatusLog((prev) => [...prev.slice(-199), `[${ts}] ${line}`]);
+  };
+
+  const clearBuildPoll = () => {
+    if (buildPollTimeoutRef.current !== null) {
+      window.clearTimeout(buildPollTimeoutRef.current);
+      buildPollTimeoutRef.current = null;
+    }
   };
 
   useEffect(() => {
@@ -152,6 +167,13 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
   useEffect(() => {
     window.localStorage.setItem(YOUTUBE_AUTO_COVER_KEY, youtubeAutoCover ? "true" : "false");
   }, [youtubeAutoCover]);
+
+  useEffect(() => {
+    return () => {
+      buildPollRunRef.current += 1;
+      clearBuildPoll();
+    };
+  }, []);
 
   const handleInputModeChange = (mode: InputMode) => {
     if (isYoutubeMode(mode) && !youtubeEnabled) {
@@ -401,6 +423,8 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
     setStatusMessage(text.builder.status.startBuild);
     setStatusLog([]);
     lastPolledMessageRef.current = "";
+    buildPollRunRef.current += 1;
+    clearBuildPoll();
     appendLog(text.builder.status.started);
 
     try {
@@ -479,9 +503,16 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
       setLastDraftProjectId(projectId);
       appendLog(text.builder.status.buildJob(projectId));
 
-      const poll = setInterval(async () => {
+      const pollRun = buildPollRunRef.current;
+      const pollBuildStatus = async (): Promise<void> => {
+        if (pollRun !== buildPollRunRef.current) {
+          return;
+        }
         try {
           const status = await api.buildStatus(projectId);
+          if (pollRun !== buildPollRunRef.current) {
+            return;
+          }
           setProgress(status.progress);
           setStatusMessage(status.message);
           if (status.message && status.message !== lastPolledMessageRef.current) {
@@ -490,7 +521,7 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
           }
 
           if (status.status === "done" || status.status === "error") {
-            clearInterval(poll);
+            clearBuildPoll();
             setBuilding(false);
             if (status.status === "error") {
               setError(status.message);
@@ -518,15 +549,26 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
                 appendLog(text.builder.status.labelRequested);
               }
             }
+            return;
           }
         } catch {
-          clearInterval(poll);
+          if (pollRun !== buildPollRunRef.current) {
+            return;
+          }
+          clearBuildPoll();
           setBuilding(false);
           setError(text.builder.errors.connectionLost);
           appendLog(text.builder.status.error(text.builder.errors.connectionLost));
+          return;
         }
-      }, 1000);
+        buildPollTimeoutRef.current = window.setTimeout(() => {
+          void pollBuildStatus();
+        }, 1000);
+      };
+
+      await pollBuildStatus();
     } catch (err) {
+      clearBuildPoll();
       setBuilding(false);
       const msg = err instanceof Error ? err.message : text.builder.errors.unknown;
       setError(msg);
@@ -549,6 +591,8 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
   };
 
   const resetForge = async () => {
+    buildPollRunRef.current += 1;
+    clearBuildPoll();
     if (lastDraftProjectId) {
       try {
         await api.cleanupProjectTemp(lastDraftProjectId);
@@ -595,7 +639,7 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
               placeholder={text.builder.fields.titlePlaceholder}
             />
           </Form.Item>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={responsiveGridStyle}>
             <Form.Item label={text.common.series}>
               <Input
                 value={formData.series}

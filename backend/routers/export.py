@@ -1,13 +1,12 @@
 import io
 import zipfile
-from pathlib import Path
 from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from backend.config import CUSTOM_TAF_PATH
 from backend.http_headers import content_disposition_attachment
+from backend.path_utils import resolve_project_dir
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
@@ -15,7 +14,7 @@ router = APIRouter(prefix="/api/export", tags=["export"])
 @router.get("/zip/{project_id:path}")
 async def export_zip(project_id: str):
     project_id = unquote(project_id)
-    project_dir = CUSTOM_TAF_PATH / project_id
+    project_dir = resolve_project_dir(project_id)
     if not project_dir.exists():
         raise HTTPException(404, "Project not found")
 

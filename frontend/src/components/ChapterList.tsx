@@ -27,6 +27,13 @@ const isTimestampMode = (mode: InputMode): boolean =>
 
 const ChapterList = ({ chapters, inputMode, disableAddRemove = false, onChange }: Props) => {
   const { text } = useUiI18n();
+  const timestampGridStyle = {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+    gap: 8,
+    width: "100%",
+  } as const;
+
   const updateChapter = (id: string, patch: Partial<ChapterData>) => {
     onChange(chapters.map((ch) => (ch.id === id ? { ...ch, ...patch } : ch)));
   };
@@ -96,22 +103,24 @@ const ChapterList = ({ chapters, inputMode, disableAddRemove = false, onChange }
             )}
 
             {isTimestampMode(inputMode) && (
-              <Space>
-                <Text>{text.chapterList.start}</Text>
-                <Input
-                  placeholder="00:00:00"
-                  value={chapter.startTime ?? ""}
-                  onChange={(e) => updateChapter(chapter.id, { startTime: e.target.value })}
-                  style={{ width: 120 }}
-                />
-                <Text>{text.chapterList.end}</Text>
-                <Input
-                  placeholder="01:23:45"
-                  value={chapter.endTime ?? ""}
-                  onChange={(e) => updateChapter(chapter.id, { endTime: e.target.value })}
-                  style={{ width: 120 }}
-                />
-              </Space>
+              <div style={timestampGridStyle}>
+                <div>
+                  <Text>{text.chapterList.start}</Text>
+                  <Input
+                    placeholder={text.chapterList.startPlaceholder}
+                    value={chapter.startTime ?? ""}
+                    onChange={(e) => updateChapter(chapter.id, { startTime: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Text>{text.chapterList.end}</Text>
+                  <Input
+                    placeholder={text.chapterList.endPlaceholder}
+                    value={chapter.endTime ?? ""}
+                    onChange={(e) => updateChapter(chapter.id, { endTime: e.target.value })}
+                  />
+                </div>
+              </div>
             )}
 
             {inputMode === "yt-multi" && chapter.sourceFileName && (

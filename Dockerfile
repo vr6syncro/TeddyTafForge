@@ -1,13 +1,13 @@
 # === Build Frontend ===
-FROM node:25-alpine AS frontend-build
+FROM node:22-alpine AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install
+RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
 # === Production Image ===
-FROM python:3.14-slim
+FROM python:3.12-slim
 WORKDIR /app
 
 ARG YTDLP_VERSION=latest

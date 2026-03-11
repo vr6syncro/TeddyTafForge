@@ -1,9 +1,10 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 
-from backend.config import setup_logging, DEBUG_MODE, set_debug
+from backend import config as app_config
+from backend.config import setup_logging
 from backend.routers import files, metadata, upload, build, label, export, projects, youtube, diagnostics
 
 setup_logging()
@@ -27,18 +28,17 @@ app.include_router(diagnostics.router)
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok", "version": app.version, "debug": DEBUG_MODE}
+    return {"status": "ok", "version": app.version, "debug": app_config.is_debug_enabled()}
 
 
 @app.post("/api/debug")
 async def toggle_debug(enabled: bool):
-    set_debug(enabled)
-    return {"debug": enabled}
+    raise HTTPException(403, "Runtime-Debug-Umschaltung ist deaktiviert")
 
 
 @app.get("/api/debug")
 async def get_debug():
-    return {"debug": DEBUG_MODE}
+    return {"debug": app_config.is_debug_enabled()}
 
 
 static_dir = Path(__file__).resolve().parent.parent / "static"

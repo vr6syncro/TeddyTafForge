@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 
-from backend.config import CUSTOM_TAF_PATH
+from backend.path_utils import resolve_project_dir
 
 router = APIRouter(prefix="/api/diagnostics", tags=["diagnostics"])
 
@@ -352,7 +352,7 @@ async def project_taf_diagnostics(
     name: str,
     include_pages: bool = Query(False),
 ):
-    project_dir = CUSTOM_TAF_PATH / name
+    project_dir = resolve_project_dir(name)
     if not project_dir.exists() or not project_dir.is_dir():
         raise HTTPException(404, "Project not found")
 

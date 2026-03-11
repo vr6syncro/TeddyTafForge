@@ -31,6 +31,11 @@ import { getMetadataLanguageOptions, sanitizeMetadataText } from "../appPreferen
 import { useUiI18n } from "../uiI18n";
 
 const { Title, Text } = Typography;
+const responsiveGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 12,
+} as const;
 
 const emptyEntry = (): CustomTonieEntry => ({
   no: "999999",
@@ -85,6 +90,13 @@ const CustomToniesEditor = () => {
     custom_duplicates: { audio_id: string; titles: string[]; type: string }[];
     hash_conflicts: { hash: string; official_title: string; custom_title: string; type: string }[];
   } | null>(null);
+  const actionBarStyle = {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap" as const,
+  };
 
   const loadEntries = async () => {
     setLoading(true);
@@ -219,7 +231,7 @@ const CustomToniesEditor = () => {
         key={key}
         size="small"
         title={
-          <Space>
+          <Space wrap>
             <Text strong>{safeTitle}</Text>
             {safeSeries && <Tag color="blue">{safeSeries}</Tag>}
             <Tag>{audioIdDisplay}</Tag>
@@ -252,7 +264,7 @@ const CustomToniesEditor = () => {
       >
         {isEditing ? (
           <Form layout="vertical" size="small">
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={responsiveGridStyle}>
               <Form.Item label={text.common.title} required>
                 <Input
                   value={data.title}
@@ -315,11 +327,11 @@ const CustomToniesEditor = () => {
 
             <Divider titlePlacement="left" plain>{text.customTonies.fields.audioIds}</Divider>
             {data.audio_id.map((aid, i) => (
-              <Space key={i} style={{ marginBottom: 4, width: "100%" }}>
+              <Space key={i} wrap style={{ marginBottom: 4, width: "100%" }}>
                 <Input
                   value={aid}
                   onChange={(e) => updateArrayField("audio_id", i, e.target.value)}
-                  style={{ width: 220 }}
+                  style={{ flex: "1 1 220px", minWidth: 220 }}
                 />
                 <Button
                   size="small"
@@ -335,11 +347,11 @@ const CustomToniesEditor = () => {
 
             <Divider titlePlacement="left" plain>{text.customTonies.fields.hashes}</Divider>
             {data.hash.map((h, i) => (
-              <Space key={i} style={{ marginBottom: 4, width: "100%" }}>
+              <Space key={i} wrap style={{ marginBottom: 4, width: "100%" }}>
                 <Input
                   value={h}
                   onChange={(e) => updateArrayField("hash", i, e.target.value)}
-                  style={{ width: 400 }}
+                  style={{ flex: "1 1 320px", minWidth: 220 }}
                 />
                 <Button
                   size="small"
@@ -355,12 +367,12 @@ const CustomToniesEditor = () => {
 
             <Divider titlePlacement="left" plain>{text.customTonies.fields.tracks}</Divider>
             {data.tracks.map((track, i) => (
-              <Space key={i} style={{ marginBottom: 4, width: "100%" }}>
+              <Space key={i} wrap style={{ marginBottom: 4, width: "100%" }}>
                 <Tag>{i + 1}</Tag>
                 <Input
                   value={track}
                   onChange={(e) => updateTrack(i, e.target.value)}
-                  style={{ flex: 1, width: 300 }}
+                  style={{ flex: "1 1 260px", minWidth: 220 }}
                 />
                 <Button
                   size="small"
@@ -382,7 +394,7 @@ const CustomToniesEditor = () => {
               {
                 key: "details",
                 label: (
-                  <Space>
+                  <Space wrap>
                     <Text type="secondary">
                       {entry.tracks?.length ?? 0} {text.common.tracks}
                     </Text>
@@ -392,7 +404,7 @@ const CustomToniesEditor = () => {
                 ),
                 children: (
                   <Space direction="vertical" size="small" style={{ width: "100%" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <div style={{ ...responsiveGridStyle, gap: 8 }}>
                       <Text type="secondary">
                         {text.customTonies.fields.episodePlural}: {safeEpisodes || "-"}
                       </Text>
@@ -440,9 +452,9 @@ const CustomToniesEditor = () => {
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={actionBarStyle}>
         <Title level={4} style={{ margin: 0 }}>{text.customTonies.title}</Title>
-        <Space>
+        <Space wrap>
           <Button icon={<SafetyCertificateOutlined />} onClick={runValidation}>
             {text.customTonies.buttons.validate}
           </Button>
@@ -468,13 +480,13 @@ const CustomToniesEditor = () => {
       {validationResult && (
         <Card size="small" title={text.customTonies.validation.title}>
           <Space direction="vertical" size="small" style={{ width: "100%" }}>
-            <div style={{ display: "flex", gap: 16 }}>
+            <Space wrap size={[8, 8]}>
               <Tag>{text.customTonies.validation.official(validationResult.official_count)}</Tag>
               <Tag>{text.customTonies.validation.custom(validationResult.custom_count)}</Tag>
               <Tag color={validationResult.status === "ok" ? "green" : "orange"}>
                 {validationResult.status === "ok" ? text.customTonies.validation.ok : text.customTonies.validation.warnings}
               </Tag>
-            </div>
+            </Space>
 
             {validationResult.conflicts.length > 0 && (
               <Alert
@@ -551,7 +563,7 @@ const CustomToniesEditor = () => {
           }
         >
           <Form layout="vertical" size="small">
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={responsiveGridStyle}>
               <Form.Item label={text.common.title} required>
                 <Input
                   value={editData.title}
@@ -568,11 +580,11 @@ const CustomToniesEditor = () => {
 
             <Divider titlePlacement="left" plain>{text.customTonies.fields.audioIds}</Divider>
             {editData.audio_id.map((aid, i) => (
-              <Space key={i} style={{ marginBottom: 4 }}>
+              <Space key={i} wrap style={{ marginBottom: 4, width: "100%" }}>
                 <Input
                   value={aid}
                   onChange={(e) => updateArrayField("audio_id", i, e.target.value)}
-                  style={{ width: 220 }}
+                  style={{ flex: "1 1 220px", minWidth: 220 }}
                 />
                 <Button
                   size="small"
@@ -588,12 +600,12 @@ const CustomToniesEditor = () => {
 
             <Divider titlePlacement="left" plain>{text.customTonies.fields.tracks}</Divider>
             {editData.tracks.map((track, i) => (
-              <Space key={i} style={{ marginBottom: 4 }}>
+              <Space key={i} wrap style={{ marginBottom: 4, width: "100%" }}>
                 <Tag>{i + 1}</Tag>
                 <Input
                   value={track}
                   onChange={(e) => updateTrack(i, e.target.value)}
-                  style={{ width: 300 }}
+                  style={{ flex: "1 1 260px", minWidth: 220 }}
                 />
                 <Button
                   size="small"
