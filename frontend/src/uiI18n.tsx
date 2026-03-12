@@ -84,7 +84,6 @@ export const uiText = {
       cards: {
         metadata: "Metadaten",
         source: "Audio-Quelle",
-        sourceStatus: "URL-/Quell-Status",
         settings: "Einstellungen",
         done: "Fertig!",
         status: "Forge Status (CLI)",
@@ -103,8 +102,7 @@ export const uiText = {
       buttons: {
         chooseCover: "Cover auswaehlen",
         chooseAudio: "Audio-Datei waehlen",
-        loadInfo: "Infos laden",
-        prepareSource: "URL herunterladen + Quelle vorbereiten",
+        prepareSource: "URL laden + vorbereiten",
         useThumbnail: "Thumbnail/Previewbild als Cover",
         loadAllUrls: "Alle URL-Links laden",
         playTrimPreview: "Vorschau mit Start/Ende abspielen",
@@ -133,23 +131,10 @@ export const uiText = {
         providerInfo: (provider: string, title: string, duration: string, chapters: number) =>
           `Anbieter: ${provider || "unbekannt"} | Titel: ${title} | Dauer: ${duration} | Kapitel: ${chapters}`,
         projectLabel: (projectId: string) => `Projekt: ${projectId}`,
-        status: {
-          url: "URL",
-          info: "Infos",
-          source: "Quelle",
-          cover: "Cover",
-          project: "Projekt-ID",
-          provider: "Anbieter",
-          duration: "Dauer",
-          chapters: "Kapitel",
-          ready: "bereit",
-          pending: "offen",
-          busy: "laeuft",
-          pendingDetail: "Noch offen",
-          infoPending: "Noch keine Infos geladen",
-          sourcePending: "Noch keine Quelle vorbereitet",
-          coverAuto: "Automatisch aus Preview",
-          coverManual: "Manuell / optional",
+        progress: {
+          idle: "Noch nicht vorbereitet",
+          loading: "Quelle wird vorbereitet...",
+          ready: (filename: string) => `Bereit: ${filename}`,
         },
       },
       inputModes: {
@@ -463,7 +448,6 @@ export const uiText = {
       cards: {
         metadata: "Metadata",
         source: "Audio source",
-        sourceStatus: "URL and source status",
         settings: "Settings",
         done: "Done!",
         status: "Forge Status (CLI)",
@@ -482,8 +466,7 @@ export const uiText = {
       buttons: {
         chooseCover: "Choose cover",
         chooseAudio: "Choose audio file",
-        loadInfo: "Load info",
-        prepareSource: "Download URL + prepare source",
+        prepareSource: "Load URL and prepare",
         useThumbnail: "Use thumbnail/preview image as cover",
         loadAllUrls: "Load all URL links",
         playTrimPreview: "Play preview with start/end",
@@ -512,23 +495,10 @@ export const uiText = {
         providerInfo: (provider: string, title: string, duration: string, chapters: number) =>
           `Provider: ${provider || "unknown"} | Title: ${title} | Duration: ${duration} | Chapters: ${chapters}`,
         projectLabel: (projectId: string) => `Project: ${projectId}`,
-        status: {
-          url: "URL",
-          info: "Info",
-          source: "Source",
-          cover: "Cover",
-          project: "Project ID",
-          provider: "Provider",
-          duration: "Duration",
-          chapters: "Chapters",
-          ready: "ready",
-          pending: "pending",
-          busy: "running",
-          pendingDetail: "Pending",
-          infoPending: "No source info loaded yet",
-          sourcePending: "No source prepared yet",
-          coverAuto: "Automatic from preview",
-          coverManual: "Manual / optional",
+        progress: {
+          idle: "Not prepared yet",
+          loading: "Preparing source...",
+          ready: (filename: string) => `Ready: ${filename}`,
         },
       },
       inputModes: {
