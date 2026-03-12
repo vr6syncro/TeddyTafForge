@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Card, ColorPicker, Form, Input, Select, Segmented, Slider, Switch } from "antd";
+import { Card, ColorPicker, Form, Input, Select, Segmented, Slider, Switch, Typography } from "antd";
 import type { Color } from "antd/es/color-picker";
 import { useUiI18n } from "../uiI18n";
 
@@ -39,6 +39,12 @@ export const defaultLabelConfig: LabelConfig = {
 };
 
 const PREVIEW_SIZE = 220;
+const { Text } = Typography;
+const responsiveGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 12,
+} as const;
 
 const drawCircleText = (
   ctx: CanvasRenderingContext2D,
@@ -278,102 +284,125 @@ const LabelSettings = ({
       }
     >
       {config.enabled && (
-        <>
-          <LabelPreview
-            config={config}
-            title={title}
-            series={series}
-            coverFile={coverFile}
-            tracks={tracks}
-          />
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+            gap: 24,
+            alignItems: "start",
+          }}
+        >
+          <div
+            style={{
+              border: "1px solid rgba(127, 127, 127, 0.25)",
+              borderRadius: 12,
+              padding: 16,
+              background: "rgba(127, 127, 127, 0.06)",
+            }}
+          >
+            <div style={{ marginBottom: 8 }}>
+              <Text strong>{text.labelSettings.previewTitle}</Text>
+              <br />
+              <Text type="secondary">{text.labelSettings.previewHint}</Text>
+            </div>
+            <LabelPreview
+              config={config}
+              title={title}
+              series={series}
+              coverFile={coverFile}
+              tracks={tracks}
+            />
+          </div>
 
           <Form layout="vertical">
-            <Form.Item label={text.labelSettings.printMode}>
-              <Segmented
-                value={config.printMode}
-                onChange={(value) => update({ printMode: value as LabelConfig["printMode"] })}
-                options={[
-                  { value: "imageAndText", label: text.labelSettings.printModeOptions.imageAndText },
-                  { value: "onlyImage", label: text.labelSettings.printModeOptions.onlyImage },
-                  { value: "onlyText", label: text.labelSettings.printModeOptions.onlyText },
-                ]}
-                block
-              />
-            </Form.Item>
-
-            <Form.Item label={text.labelSettings.form}>
-              <Select
-                value={config.shape}
-                onChange={(value: "round" | "square") => update({ shape: value })}
-                options={[
-                  { value: "round", label: text.labelSettings.shapeOptions.round },
-                  { value: "square", label: text.labelSettings.shapeOptions.square },
-                ]}
-              />
-            </Form.Item>
-
-            <Form.Item label={text.labelSettings.size(config.diameterMm)}>
-              <Slider
-                min={20}
-                max={80}
-                value={config.diameterMm}
-                onChange={(value) => update({ diameterMm: value })}
-              />
-            </Form.Item>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Form.Item label={text.labelSettings.showTracklist} style={{ marginBottom: 8 }}>
-                <Switch
-                  checked={config.showTracklist}
-                  onChange={(checked) => update({ showTracklist: checked })}
-                  disabled={tracks.length === 0}
+              <Form.Item label={text.labelSettings.printMode}>
+                <Segmented
+                  value={config.printMode}
+                  onChange={(value) => update({ printMode: value as LabelConfig["printMode"] })}
+                  options={[
+                    { value: "imageAndText", label: text.labelSettings.printModeOptions.imageAndText },
+                    { value: "onlyImage", label: text.labelSettings.printModeOptions.onlyImage },
+                    { value: "onlyText", label: text.labelSettings.printModeOptions.onlyText },
+                  ]}
+                  block
                 />
               </Form.Item>
-              <Form.Item label={text.labelSettings.showSeriesOnImage} style={{ marginBottom: 8 }}>
-                <Switch
-                  checked={config.showSeriesOnImage}
-                  onChange={(checked) => update({ showSeriesOnImage: checked })}
-                  disabled={config.printMode === "onlyText"}
+
+              <div style={responsiveGridStyle}>
+                <Form.Item label={text.labelSettings.form}>
+                  <Select
+                    value={config.shape}
+                    onChange={(value: "round" | "square") => update({ shape: value })}
+                    options={[
+                      { value: "round", label: text.labelSettings.shapeOptions.round },
+                      { value: "square", label: text.labelSettings.shapeOptions.square },
+                    ]}
+                  />
+                </Form.Item>
+
+                <Form.Item label={text.labelSettings.size(config.diameterMm)}>
+                  <Slider
+                    min={20}
+                    max={80}
+                    value={config.diameterMm}
+                    onChange={(value) => update({ diameterMm: value })}
+                  />
+                </Form.Item>
+              </div>
+
+              <div style={responsiveGridStyle}>
+                <Form.Item label={text.labelSettings.showTracklist} style={{ marginBottom: 8 }}>
+                  <Switch
+                    checked={config.showTracklist}
+                    onChange={(checked) => update({ showTracklist: checked })}
+                    disabled={tracks.length === 0}
+                  />
+                </Form.Item>
+                <Form.Item label={text.labelSettings.showSeriesOnImage} style={{ marginBottom: 8 }}>
+                  <Switch
+                    checked={config.showSeriesOnImage}
+                    onChange={(checked) => update({ showSeriesOnImage: checked })}
+                    disabled={config.printMode === "onlyText"}
+                  />
+                </Form.Item>
+              </div>
+
+              <div style={responsiveGridStyle}>
+                <Form.Item label={text.labelSettings.backgroundColor}>
+                  <ColorPicker
+                    value={config.bgColor}
+                    onChange={handleColorChange}
+                    showText
+                  />
+                </Form.Item>
+                <Form.Item label={text.labelSettings.fontSize(config.fontSize)}>
+                  <Slider
+                    min={6}
+                    max={18}
+                    value={config.fontSize}
+                    onChange={(value) => update({ fontSize: value })}
+                  />
+                </Form.Item>
+              </div>
+
+              <Form.Item label={text.labelSettings.line1}>
+                <Input
+                  value={config.textLine1}
+                  onChange={(e) => update({ textLine1: e.target.value })}
+                  placeholder={text.labelSettings.line1Placeholder}
+                  disabled={config.showTracklist}
                 />
               </Form.Item>
-            </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Form.Item label={text.labelSettings.backgroundColor}>
-                <ColorPicker
-                  value={config.bgColor}
-                  onChange={handleColorChange}
-                  showText
+              <Form.Item label={text.labelSettings.line2}>
+                <Input
+                  value={config.textLine2}
+                  onChange={(e) => update({ textLine2: e.target.value })}
+                  placeholder={text.labelSettings.line2Placeholder}
                 />
               </Form.Item>
-              <Form.Item label={text.labelSettings.fontSize(config.fontSize)}>
-                <Slider
-                  min={6}
-                  max={18}
-                  value={config.fontSize}
-                  onChange={(value) => update({ fontSize: value })}
-                />
-              </Form.Item>
-            </div>
-
-            <Form.Item label={text.labelSettings.line1}>
-              <Input
-                value={config.textLine1}
-                onChange={(e) => update({ textLine1: e.target.value })}
-                placeholder={text.labelSettings.line1Placeholder}
-                disabled={config.showTracklist}
-              />
-            </Form.Item>
-
-            <Form.Item label={text.labelSettings.line2}>
-              <Input
-                value={config.textLine2}
-                onChange={(e) => update({ textLine2: e.target.value })}
-                placeholder={text.labelSettings.line2Placeholder}
-              />
-            </Form.Item>
           </Form>
-        </>
+        </div>
       )}
     </Card>
   );

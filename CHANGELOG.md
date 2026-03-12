@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.2
+
+- GitHub-Automation aktualisiert: aktuelle Action-Majors, breitere Branch-Coverage fuer CI/Docker, `concurrency` und Timeouts.
+- Trivy/CVE-Scanning auf aktuellen Stand gezogen und Release-/Branch-Builds weiter gehaertet.
+- Docker-Basis auf Node 24 und Python 3.13 angehoben; Frontend-Toolchain auf aktuelle stabile TafForge-Staende aktualisiert.
+- TeddyCloud-Plugin-Installation in `entrypoint.sh` gegen das erwartete Plugin-Schema geprueft und robuster gemacht.
+- Frontend-Build weiter optimiert: Vendor-Chunk-Splitting beseitigt den frueheren Vite-Warnhinweis.
+- URL-Import im Builder vereinfacht: kompakter kombinierter Vorbereitungs-Flow mit kleiner 0-100%-Fortschrittsanzeige.
+
 ## v0.2.1
 
 - Vollstaendige DE/EN-System-UI mit persistenter Sprachumschaltung im Frontend.

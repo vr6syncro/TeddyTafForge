@@ -27,6 +27,9 @@ export const uiText = {
   de: {
     locale: "de-DE",
     app: {
+      subtitle: "TAF bauen, pruefen und verwalten",
+      languageLabel: "Sprache",
+      loading: "Bereich wird geladen...",
       support: "Support",
       tabs: {
         builder: "Builder",
@@ -99,8 +102,7 @@ export const uiText = {
       buttons: {
         chooseCover: "Cover auswaehlen",
         chooseAudio: "Audio-Datei waehlen",
-        loadInfo: "Infos laden",
-        prepareSource: "URL herunterladen + Quelle vorbereiten",
+        prepareSource: "URL laden + vorbereiten",
         useThumbnail: "Thumbnail/Previewbild als Cover",
         loadAllUrls: "Alle URL-Links laden",
         playTrimPreview: "Vorschau mit Start/Ende abspielen",
@@ -129,6 +131,11 @@ export const uiText = {
         providerInfo: (provider: string, title: string, duration: string, chapters: number) =>
           `Anbieter: ${provider || "unbekannt"} | Titel: ${title} | Dauer: ${duration} | Kapitel: ${chapters}`,
         projectLabel: (projectId: string) => `Projekt: ${projectId}`,
+        progress: {
+          idle: "Noch nicht vorbereitet",
+          loading: "Quelle wird vorbereitet...",
+          ready: (filename: string) => `Bereit: ${filename}`,
+        },
       },
       inputModes: {
         files: "Einzelne Dateien pro Kapitel",
@@ -180,6 +187,8 @@ export const uiText = {
       title: (index: number) => `Kapitel ${index}`,
       chapterNamePlaceholder: "Kapitelname (optional)",
       youtubeLinkPlaceholder: "YouTube-Link",
+      startPlaceholder: "00:00:00",
+      endPlaceholder: "01:23:45",
       start: "Start:",
       end: "Ende:",
       loaded: (filename: string) => `Geladen: ${filename}`,
@@ -188,6 +197,8 @@ export const uiText = {
     },
     labelSettings: {
       cardTitle: "Label / Coin PDF",
+      previewTitle: "Live-Vorschau",
+      previewHint: "Die Vorschau passt sich direkt an Form, Bild und Text an.",
       on: "An",
       off: "Aus",
       printMode: "Druck-Modus",
@@ -380,6 +391,9 @@ export const uiText = {
   en: {
     locale: "en-GB",
     app: {
+      subtitle: "Build, review and manage TAF projects",
+      languageLabel: "Language",
+      loading: "Loading section...",
       support: "Support",
       tabs: {
         builder: "Builder",
@@ -452,8 +466,7 @@ export const uiText = {
       buttons: {
         chooseCover: "Choose cover",
         chooseAudio: "Choose audio file",
-        loadInfo: "Load info",
-        prepareSource: "Download URL + prepare source",
+        prepareSource: "Load URL and prepare",
         useThumbnail: "Use thumbnail/preview image as cover",
         loadAllUrls: "Load all URL links",
         playTrimPreview: "Play preview with start/end",
@@ -482,6 +495,11 @@ export const uiText = {
         providerInfo: (provider: string, title: string, duration: string, chapters: number) =>
           `Provider: ${provider || "unknown"} | Title: ${title} | Duration: ${duration} | Chapters: ${chapters}`,
         projectLabel: (projectId: string) => `Project: ${projectId}`,
+        progress: {
+          idle: "Not prepared yet",
+          loading: "Preparing source...",
+          ready: (filename: string) => `Ready: ${filename}`,
+        },
       },
       inputModes: {
         files: "Separate files per chapter",
@@ -533,6 +551,8 @@ export const uiText = {
       title: (index: number) => `Chapter ${index}`,
       chapterNamePlaceholder: "Chapter name (optional)",
       youtubeLinkPlaceholder: "YouTube link",
+      startPlaceholder: "00:00:00",
+      endPlaceholder: "01:23:45",
       start: "Start:",
       end: "End:",
       loaded: (filename: string) => `Loaded: ${filename}`,
@@ -541,6 +561,8 @@ export const uiText = {
     },
     labelSettings: {
       cardTitle: "Label / Coin PDF",
+      previewTitle: "Live preview",
+      previewHint: "The preview updates immediately for shape, artwork and text.",
       on: "On",
       off: "Off",
       printMode: "Print mode",

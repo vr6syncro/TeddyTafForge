@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from backend.config import CUSTOM_TAF_PATH
 from backend.http_headers import content_disposition_attachment
+from backend.path_utils import ensure_within, resolve_project_dir
 from backend.routers.metadata import (
     _read_custom_json, _write_custom_json, _reload_teddycloud_cache, _extract_audio_ids, CUSTOM_JSON_PATH,
 )
@@ -272,9 +273,7 @@ def _compose_project_metadata(
 def _safe_extract_zip(zf: zipfile.ZipFile | pyzipper.AESZipFile, extract_dir: Path) -> None:
     root = extract_dir.resolve()
     for member in zf.infolist():
-        target = (extract_dir / member.filename).resolve()
-        if root not in target.parents and target != root:
-            raise HTTPException(400, "ZIP enthaelt ungueltige Pfade")
+        ensure_within(root, extract_dir / member.filename, "ZIP enthaelt ungueltige Pfade")
     zf.extractall(extract_dir)
 
 
@@ -409,7 +408,7 @@ async def list_projects():
 
 @router.get("/{name:path}/cover")
 async def get_project_cover(name: str):
-    project_dir = CUSTOM_TAF_PATH / name
+    project_dir = resolve_project_dir(name)
     if not project_dir.exists() or not project_dir.is_dir():
         raise HTTPException(404, "Project not found")
 
@@ -424,7 +423,7 @@ async def get_project_cover(name: str):
 
 @router.get("/{name:path}")
 async def get_project(name: str):
-    project_dir = CUSTOM_TAF_PATH / name
+    project_dir = resolve_project_dir(name)
     if not project_dir.exists() or not project_dir.is_dir():
         raise HTTPException(404, "Project not found")
     return _scan_project(project_dir)
@@ -432,7 +431,7 @@ async def get_project(name: str):
 
 @router.patch("/{name:path}/metadata")
 async def update_project_metadata(name: str, payload: MetadataUpdateRequest):
-    project_dir = CUSTOM_TAF_PATH / name
+    project_dir = resolve_project_dir(name)
     if not project_dir.exists() or not project_dir.is_dir():
         raise HTTPException(404, "Project not found")
 
@@ -497,7 +496,7 @@ async def delete_project(
     remove_custom: bool = True,
     remove_by_title: bool = True,
 ):
-    project_dir = CUSTOM_TAF_PATH / name
+    project_dir = resolve_project_dir(name)
     if not project_dir.exists() or not project_dir.is_dir():
         raise HTTPException(404, "Project not found")
 
@@ -646,7 +645,10 @@ async def export_backup(payload: BackupExportRequest):
     selected_dirs: list[Path] = []
     selected_ids: list[str] = []
     for name in project_names:
-        project_dir = CUSTOM_TAF_PATH / name
+        try:
+            project_dir = resolve_project_dir(name)
+        except HTTPException:
+            continue
         if not project_dir.exists() or not project_dir.is_dir():
             continue
         if not any(project_dir.glob("*.taf")):
@@ -821,7 +823,7 @@ async def import_backup(
 
 @router.post("/cleanup-temp/{name:path}")
 async def cleanup_temp_project(name: str):
-    project_dir = CUSTOM_TAF_PATH / name
+    project_dir = resolve_project_dir(name)
     if not project_dir.exists() or not project_dir.is_dir():
         return {"status": "not_found", "name": name}
 

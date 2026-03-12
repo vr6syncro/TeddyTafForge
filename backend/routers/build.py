@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.config import CUSTOM_TAF_PATH
+from backend.path_utils import resolve_project_dir, sanitize_uploaded_filename
 from backend.routers.metadata import (
     _read_custom_json, _write_custom_json, _reload_teddycloud_cache, audio_id_exists,
 )
@@ -108,8 +109,7 @@ async def get_build_status(project_id: str):
 
 async def _run_build(project_id: str, request: BuildRequest) -> None:
     status = _build_jobs[project_id]
-    project_dir = CUSTOM_TAF_PATH / project_id
-    project_dir.mkdir(parents=True, exist_ok=True)
+    project_dir = resolve_project_dir(project_id, create=True)
 
     try:
         status.status = "encoding"
@@ -291,11 +291,11 @@ async def _run_build(project_id: str, request: BuildRequest) -> None:
 
 def _resolve_source(project_id: str, source_name: str) -> str:
     """Resolve a source filename to full path in the project's source_audio dir."""
-    source_dir = CUSTOM_TAF_PATH / project_id / "source_audio"
-    candidate = source_dir / source_name
-    if candidate.exists():
-        return str(candidate)
-    return source_name
+    source_dir = resolve_project_dir(project_id) / "source_audio"
+    candidate = source_dir / sanitize_uploaded_filename(source_name, fallback="audio")
+    if not candidate.exists() or not candidate.is_file():
+        raise RuntimeError(f"Quelldatei nicht gefunden: {source_name}")
+    return str(candidate)
 
 
 def _cleanup_source_audio(project_dir: Path) -> None:

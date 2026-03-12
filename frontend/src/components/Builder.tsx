@@ -83,6 +83,12 @@ const createInitialFormData = (defaultMetadataLanguage: MetadataLanguage): Build
   generateLabel: false,
 });
 
+const responsiveGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 12,
+} as const;
+
 const Builder = ({ uiLanguage }: BuilderProps) => {
   const { text } = useUiI18n();
   const defaultMetadataLanguage = getDefaultMetadataLanguage(uiLanguage);
@@ -118,6 +124,7 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
   const [youtubeInfo, setYoutubeInfo] = useState<YoutubeInfoResult | null>(null);
   const [youtubeLoading, setYoutubeLoading] = useState(false);
   const [youtubeThumbLoading, setYoutubeThumbLoading] = useState(false);
+  const [youtubePrepareProgress, setYoutubePrepareProgress] = useState(0);
   const [youtubeAutoCover, setYoutubeAutoCover] = useState(false);
   const [multiDownloadLoadingId, setMultiDownloadLoadingId] = useState("");
   const previewRef = useRef<HTMLAudioElement | null>(null);
@@ -125,10 +132,19 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
   const autoFilledTitleRef = useRef("");
   const lastDownloadedSourceUrlRef = useRef("");
   const lastPolledMessageRef = useRef("");
+  const buildPollTimeoutRef = useRef<number | null>(null);
+  const buildPollRunRef = useRef(0);
 
   const appendLog = (line: string) => {
     const ts = new Date().toLocaleTimeString(text.locale, { hour12: false });
     setStatusLog((prev) => [...prev.slice(-199), `[${ts}] ${line}`]);
+  };
+
+  const clearBuildPoll = () => {
+    if (buildPollTimeoutRef.current !== null) {
+      window.clearTimeout(buildPollTimeoutRef.current);
+      buildPollTimeoutRef.current = null;
+    }
   };
 
   useEffect(() => {
@@ -152,6 +168,13 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
   useEffect(() => {
     window.localStorage.setItem(YOUTUBE_AUTO_COVER_KEY, youtubeAutoCover ? "true" : "false");
   }, [youtubeAutoCover]);
+
+  useEffect(() => {
+    return () => {
+      buildPollRunRef.current += 1;
+      clearBuildPoll();
+    };
+  }, []);
 
   const handleInputModeChange = (mode: InputMode) => {
     if (isYoutubeMode(mode) && !youtubeEnabled) {
@@ -190,7 +213,7 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
     setYoutubeConsentOpen(true);
   };
 
-  const loadYoutubeInfo = async () => {
+  const prepareYoutubeSource = async () => {
     if (!youtubeUrl.trim()) {
       setError(text.builder.errors.sourceUrlMissing);
       return;
@@ -200,42 +223,12 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
     setError("");
     if (lastDownloadedSourceUrlRef.current && lastDownloadedSourceUrlRef.current !== normalizedUrl) {
       setYoutubeSourceFile("");
+      setYoutubeProjectId("");
+      setYoutubeInfo(null);
+      setYoutubePrepareProgress(0);
     }
     setYoutubeLoading(true);
-    try {
-      const info = await api.youtubeInfo(normalizedUrl, youtubeProjectId || undefined);
-      if (reqSeq !== youtubeRequestSeqRef.current) return;
-      setYoutubeInfo(info);
-      if (info.title) {
-        const safe = sanitizeTitle(info.title);
-        setFormData((prev) => {
-          const current = (prev.title || "").trim();
-          if (!current || current === autoFilledTitleRef.current) {
-            autoFilledTitleRef.current = safe;
-            return { ...prev, title: safe };
-          }
-          return prev;
-        });
-      }
-    } catch (err) {
-      if (reqSeq !== youtubeRequestSeqRef.current) return;
-      setError(err instanceof Error ? err.message : text.builder.errors.sourceInfoFailed);
-    } finally {
-      if (reqSeq === youtubeRequestSeqRef.current) {
-        setYoutubeLoading(false);
-      }
-    }
-  };
-
-  const downloadYoutubeSource = async () => {
-    if (!youtubeUrl.trim()) {
-      setError(text.builder.errors.sourceUrlMissing);
-      return;
-    }
-    const normalizedUrl = youtubeUrl.trim();
-    const reqSeq = ++youtubeRequestSeqRef.current;
-    setError("");
-    setYoutubeLoading(true);
+    setYoutubePrepareProgress(15);
     try {
       const result = await api.youtubeDownload(normalizedUrl, youtubeProjectId || undefined);
       if (reqSeq !== youtubeRequestSeqRef.current) return;
@@ -251,6 +244,7 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
         thumbnail: result.thumbnail,
         chapters: result.chapters,
       });
+      setYoutubePrepareProgress(75);
 
       if (result.title) {
         const safe = sanitizeTitle(result.title);
@@ -301,11 +295,14 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
       }
 
       if (youtubeAutoCover) {
+        setYoutubePrepareProgress(90);
         await applyYoutubeThumbnail(normalizedUrl, true);
       }
+      setYoutubePrepareProgress(100);
       appendLog(text.builder.status.sourcePrepared(result.filename));
     } catch (err) {
       if (reqSeq !== youtubeRequestSeqRef.current) return;
+      setYoutubePrepareProgress(0);
       setError(err instanceof Error ? err.message : text.builder.errors.downloadFailed);
     } finally {
       if (reqSeq === youtubeRequestSeqRef.current) {
@@ -401,6 +398,8 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
     setStatusMessage(text.builder.status.startBuild);
     setStatusLog([]);
     lastPolledMessageRef.current = "";
+    buildPollRunRef.current += 1;
+    clearBuildPoll();
     appendLog(text.builder.status.started);
 
     try {
@@ -479,9 +478,16 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
       setLastDraftProjectId(projectId);
       appendLog(text.builder.status.buildJob(projectId));
 
-      const poll = setInterval(async () => {
+      const pollRun = buildPollRunRef.current;
+      const pollBuildStatus = async (): Promise<void> => {
+        if (pollRun !== buildPollRunRef.current) {
+          return;
+        }
         try {
           const status = await api.buildStatus(projectId);
+          if (pollRun !== buildPollRunRef.current) {
+            return;
+          }
           setProgress(status.progress);
           setStatusMessage(status.message);
           if (status.message && status.message !== lastPolledMessageRef.current) {
@@ -490,7 +496,7 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
           }
 
           if (status.status === "done" || status.status === "error") {
-            clearInterval(poll);
+            clearBuildPoll();
             setBuilding(false);
             if (status.status === "error") {
               setError(status.message);
@@ -518,15 +524,26 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
                 appendLog(text.builder.status.labelRequested);
               }
             }
+            return;
           }
         } catch {
-          clearInterval(poll);
+          if (pollRun !== buildPollRunRef.current) {
+            return;
+          }
+          clearBuildPoll();
           setBuilding(false);
           setError(text.builder.errors.connectionLost);
           appendLog(text.builder.status.error(text.builder.errors.connectionLost));
+          return;
         }
-      }, 1000);
+        buildPollTimeoutRef.current = window.setTimeout(() => {
+          void pollBuildStatus();
+        }, 1000);
+      };
+
+      await pollBuildStatus();
     } catch (err) {
+      clearBuildPoll();
       setBuilding(false);
       const msg = err instanceof Error ? err.message : text.builder.errors.unknown;
       setError(msg);
@@ -549,6 +566,8 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
   };
 
   const resetForge = async () => {
+    buildPollRunRef.current += 1;
+    clearBuildPoll();
     if (lastDraftProjectId) {
       try {
         await api.cleanupProjectTemp(lastDraftProjectId);
@@ -581,6 +600,19 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
   const tracksForLabel = formData.chapters.map((ch) => ch.title).filter(Boolean);
   const canUseYoutubeSingleSource =
     formData.inputMode === "yt-single" || formData.inputMode === "yt-splitter" || formData.inputMode === "yt-auto";
+  const youtubeSourceReady = Boolean(youtubeProjectId && youtubeSourceFile);
+  const youtubeProgressStatus = error
+    ? "exception"
+    : youtubeLoading || youtubeThumbLoading
+      ? "active"
+      : youtubeSourceReady
+        ? "success"
+        : "normal";
+  const youtubeProgressText = youtubeLoading || youtubeThumbLoading
+    ? text.builder.youtube.progress.loading
+    : youtubeSourceReady
+      ? text.builder.youtube.progress.ready(youtubeSourceFile)
+      : text.builder.youtube.progress.idle;
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -595,7 +627,7 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
               placeholder={text.builder.fields.titlePlaceholder}
             />
           </Form.Item>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={responsiveGridStyle}>
             <Form.Item label={text.common.series}>
               <Input
                 value={formData.series}
@@ -649,7 +681,7 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
 
       <Card title={text.builder.cards.source}>
         <Form layout="vertical">
-          <Form.Item label={text.builder.youtube.enable}>
+              <Form.Item label={text.builder.youtube.enable}>
             <Space>
               <Switch
                 checked={youtubeEnabled}
@@ -723,16 +755,16 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
                     setYoutubeUrl(value);
                     if (value.trim() !== lastDownloadedSourceUrlRef.current) {
                       setYoutubeSourceFile("");
+                      setYoutubeProjectId("");
+                      setYoutubeInfo(null);
+                      setYoutubePrepareProgress(0);
                     }
                   }}
                   placeholder={text.builder.fields.sourceUrlPlaceholder}
                 />
               </Form.Item>
               <Space wrap>
-                <Button onClick={loadYoutubeInfo} loading={youtubeLoading}>
-                  {text.builder.buttons.loadInfo}
-                </Button>
-                <Button type="primary" onClick={downloadYoutubeSource} loading={youtubeLoading}>
+                <Button type="primary" onClick={prepareYoutubeSource} loading={youtubeLoading}>
                   {text.builder.buttons.prepareSource}
                 </Button>
                 <Button
@@ -742,6 +774,21 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
                 >
                   {text.builder.buttons.useThumbnail}
                 </Button>
+              </Space>
+              <Space
+                size="small"
+                align="center"
+                style={{ width: "100%", justifyContent: "space-between", flexWrap: "wrap" }}
+              >
+                <Progress
+                  percent={youtubePrepareProgress}
+                  size="small"
+                  status={youtubeProgressStatus}
+                  style={{ flex: "1 1 240px", marginBottom: 0, minWidth: 220, maxWidth: 360 }}
+                />
+                <Text type="secondary" style={{ whiteSpace: "nowrap" }}>
+                  {youtubeProgressText}
+                </Text>
               </Space>
               <Form.Item label={text.builder.fields.coverFromPreview}>
                 <Space>

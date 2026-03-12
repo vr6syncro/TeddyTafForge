@@ -10,6 +10,7 @@ from backend.config import (
     ALLOWED_IMAGE_EXTENSIONS,
     CUSTOM_TAF_PATH,
 )
+from backend.path_utils import resolve_project_dir, sanitize_uploaded_filename, unique_child_path
 
 log = logging.getLogger("tafforge.upload")
 
@@ -17,9 +18,7 @@ router = APIRouter(prefix="/api/upload", tags=["upload"])
 
 
 def _ensure_project_dir(project_id: str) -> Path:
-    project_dir = CUSTOM_TAF_PATH / project_id
-    project_dir.mkdir(parents=True, exist_ok=True)
-    return project_dir
+    return resolve_project_dir(project_id, create=True)
 
 
 @router.post("/audio")
@@ -41,7 +40,8 @@ async def upload_audio(
     audio_dir = project_dir / "source_audio"
     audio_dir.mkdir(exist_ok=True)
 
-    dest = audio_dir / file.filename
+    safe_name = sanitize_uploaded_filename(file.filename, fallback=f"audio-{uuid.uuid4().hex[:8]}{ext}")
+    dest = unique_child_path(audio_dir, safe_name)
     with dest.open("wb") as f:
         shutil.copyfileobj(file.file, f)
 
@@ -49,7 +49,7 @@ async def upload_audio(
     log.info("Audio hochgeladen: '%s' (%d Bytes) -> project=%s", file.filename, size, project_id)
     return {
         "project_id": project_id,
-        "filename": file.filename,
+        "filename": dest.name,
         "path": str(dest.relative_to(CUSTOM_TAF_PATH)),
         "size": size,
     }
@@ -68,6 +68,8 @@ async def upload_image(
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_IMAGE_EXTENSIONS:
         raise HTTPException(400, f"Unsupported image format: {ext}")
+    if track_index < 0:
+        raise HTTPException(400, "track_index must be >= 0")
 
     project_dir = _ensure_project_dir(project_id)
 

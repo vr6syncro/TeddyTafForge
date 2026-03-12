@@ -8,6 +8,7 @@ from backend.config import (
     LIBRARY_PATH,
     CONTENT_PATH,
 )
+from backend.path_utils import ensure_within
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 
@@ -26,9 +27,7 @@ async def browse_directory(
     if base is None:
         raise HTTPException(400, f"Unknown root: {root}")
 
-    target = (base / path).resolve()
-    if not str(target).startswith(str(base.resolve())):
-        raise HTTPException(403, "Path traversal not allowed")
+    target = ensure_within(base, base / path, "Path traversal not allowed")
     if not target.exists():
         raise HTTPException(404, "Path not found")
     if not target.is_dir():

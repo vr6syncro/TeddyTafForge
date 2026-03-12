@@ -4,9 +4,17 @@ Custom Tonie TAF Builder als Docker-Container neben TeddyCloud.
 
 Audio-Dateien konvertieren, Kapitel verwalten, Metadaten anlegen, Cover-Bilder zuweisen und Labels/Coins als PDF erstellen - alles in einer Web-Oberflaeche.
 
-> **Aktueller Release-Stand:** `v0.2.1` bringt die vollstaendige DE/EN-System-UI, Light-/Dark-Mode sowie neutrale Placeholder auf den bereits stabilisierten TonieToolbox-nahen Encoderpfad.
+> **Aktueller Release-Stand:** `v0.2.2` bringt den gehaerteten Audit- und Release-Stand mit aktuellen GitHub-Workflows, aktualisierter Frontend-Toolchain, robusterer Plugin-Installation und kompakterem URL-Vorbereitungs-Flow auf dem stabilisierten TonieToolbox-nahen Encoderpfad.
 >
 > **Hinweis:** Dieses Projekt befindet sich weiter in aktiver Entwicklung. Bug-Reports und Feedback sind willkommen unter [GitHub Issues](https://github.com/vr6syncro/TeddyTafForge/issues).
+
+## Release v0.2.2
+
+- GitHub-Automation aktualisiert: aktuelle Action-Majors, `concurrency`, Timeouts und Branch-Builds fuer `test/**`, `feat/**`, `fix/**` und `upgrade/**`
+- Trivy/CVE-Scanning auf aktuellen Stand gebracht und Release-Hygiene weiter geschaerft
+- Docker-Basis auf Node 24 und Python 3.13 angehoben; Frontend-Toolchain auf aktuelle stabile TafForge-Staende aktualisiert
+- Plugin-Installation gegen das TeddyCloudPlugins-Schema geprueft und robuster gemacht
+- URL-Import im Builder kompakter dargestellt; Frontend-Build ohne den frueheren grossen Chunk-Warnhinweis
 
 ## Release v0.2.1
 
@@ -248,15 +256,15 @@ python -m compileall backend
 ## Technologie
 
 - **Frontend**: React 19, TypeScript, Vite, Ant Design (Dark Theme)
-- **Backend**: Python 3.12, FastAPI, uvicorn
+- **Backend**: Python 3.13, FastAPI, uvicorn
 - **Audio**: FFmpeg + libopus
 - **TAF**: Toolbox-naher Encoderpfad mit Protobuf-Header und OGG-Repacking (4K-Block-Alignment)
 - **Label**: reportlab (PDF-Generierung)
-- **Container**: Multi-Stage Docker Build (Node 22 Alpine + Python 3.12 slim)
+- **Container**: Multi-Stage Docker Build (Node 24 Alpine + Python 3.13 slim)
 
 ## GitHub Automation
 
-- **CI**: Frontend-Build und Backend-Compile-Checks auf `main` und `fix/**`
+- **CI**: Frontend-Build und Backend-Compile-Checks auf `main`, `fix/**`, `upgrade/**`, `feat/**` und `test/**`
 - **Dependabot**: Updates fuer GitHub Actions, Docker, Python und Frontend-NPM
 - **Security**: Trivy-Scan (Vulns, Secrets, Config) plus GitHub Dependency Review auf PRs
 
@@ -265,14 +273,14 @@ python -m compileall backend
 | Tag | Wann wird gebaut? | Fuer wen? |
 |---|---|---|
 | `latest` | Bei jeder Code-Aenderung auf `main` | Empfohlen fuer die meisten Nutzer. Enthaelt immer den neuesten Code und die aktuellste yt-dlp Version. |
-| `<semver>` | Bei Git-Tags wie `v0.2.1` | Reproduzierbare Release-Staende, z.B. `ghcr.io/vr6syncro/teddytafforge:0.2.1` |
+| `<semver>` | Bei Git-Tags wie `v0.2.2` | Reproduzierbare Release-Staende, z.B. `ghcr.io/vr6syncro/teddytafforge:0.2.2` |
 | `autoupdate` | Taeglich automatisch, sobald eine neue yt-dlp Version erscheint | Ideal wenn du keine Code-Updates brauchst, aber yt-dlp immer aktuell haben willst (z.B. bei YouTube-Aenderungen). |
 | `autoupdate-ytdlp-<version>` | Einmalig pro yt-dlp Release | Zum Pinnen auf eine bestimmte yt-dlp Version, z.B. `autoupdate-ytdlp-2025.01.15`. |
 
 **Welchen Tag soll ich nehmen?**
 
 - **`latest`** ist die beste Wahl fuer die meisten Nutzer. Du bekommst alle neuen Features, Bugfixes und die aktuellste yt-dlp Version.
-- **`0.2.1`** ist der aktuelle feste Release-Tag mit UI-Sprachumschaltung, Theme-Switch und neutralen Placeholdern.
+- **`0.2.2`** ist der aktuelle feste Release-Tag mit aktualisierter GitHub-Automation, neuer Toolchain-Basis und kompakterem URL-Vorbereitungs-Flow.
 - **`autoupdate`** ist sinnvoll, wenn du TafForge produktiv nutzt und nicht bei jedem Code-Update wechseln willst, aber trotzdem moechtest, dass YouTube-Downloads funktionieren, wenn YouTube seine Schnittstellen aendert.
 
 ```yaml
@@ -280,7 +288,7 @@ python -m compileall backend
 image: ghcr.io/vr6syncro/teddytafforge:latest
 
 # Fester Release-Stand
-image: ghcr.io/vr6syncro/teddytafforge:0.2.1
+image: ghcr.io/vr6syncro/teddytafforge:0.2.2
 
 # Automatisches yt-dlp Update ohne Code-Aenderungen
 image: ghcr.io/vr6syncro/teddytafforge:autoupdate

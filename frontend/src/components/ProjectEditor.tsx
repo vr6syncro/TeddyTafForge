@@ -45,6 +45,8 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
     { value: "audio-play-educational", label: text.metadata.categories["audio-play-educational"] },
   ];
   const [metaForm] = Form.useForm();
+  const liveTitle = Form.useWatch("title", metaForm) || project.title;
+  const liveSeries = Form.useWatch("series", metaForm) || project.series;
   const [metaBusy, setMetaBusy] = useState(false);
   const [chapterTitles, setChapterTitles] = useState<string[]>([]);
   const [chapterBusy, setChapterBusy] = useState(false);
@@ -57,6 +59,11 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
   const [labelConfig, setLabelConfig] = useState<LabelConfig>({ ...defaultLabelConfig, enabled: true });
   const [labelBusy, setLabelBusy] = useState(false);
   const [error, setError] = useState("");
+  const responsiveGridStyle = {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gap: 12,
+  } as const;
 
   const initFromProject = useCallback((p: ProjectInfo) => {
     const safeTitle = sanitizeMetadataText(p.title) || p.name;
@@ -171,7 +178,7 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <Button icon={<ArrowLeftOutlined />} onClick={onBack}>{text.common.back}</Button>
-        <Title level={4} style={{ margin: 0 }}>{project.title}</Title>
+        <Title level={4} style={{ margin: 0 }}>{liveTitle}</Title>
       </div>
 
       {error && <Alert type="error" message={error} closable onClose={() => setError("")} />}
@@ -182,7 +189,7 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
           <Form.Item name="title" label={text.common.title} rules={[{ required: true, message: text.projectEditor.fields.titleRequired }]}>
             <Input />
           </Form.Item>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={responsiveGridStyle}>
             <Form.Item name="series" label={text.common.series}>
               <Input />
             </Form.Item>
@@ -190,7 +197,7 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
               <Input />
             </Form.Item>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={responsiveGridStyle}>
             <Form.Item name="language" label={text.common.language}>
               <Select options={metadataLanguageOptions} />
             </Form.Item>
@@ -211,8 +218,16 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
         ) : (
           <Space direction="vertical" style={{ width: "100%" }}>
             {chapterTitles.map((title, idx) => (
-              <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Text type="secondary" style={{ minWidth: 28, textAlign: "right" }}>{idx + 1}.</Text>
+              <div
+                key={idx}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "32px minmax(0, 1fr)",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <Text type="secondary" style={{ textAlign: "right" }}>{idx + 1}.</Text>
                 <Input
                   value={title}
                   onChange={(e) => {
@@ -306,8 +321,8 @@ const ProjectEditor = ({ project, onBack }: ProjectEditorProps) => {
         <LabelSettings
           config={labelConfig}
           onChange={setLabelConfig}
-          title={metaForm.getFieldValue("title") || project.title}
-          series={metaForm.getFieldValue("series") || project.series}
+          title={liveTitle}
+          series={liveSeries}
           coverFile={coverFile ?? undefined}
           tracks={chapterTitles}
         />

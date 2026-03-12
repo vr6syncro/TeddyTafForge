@@ -6,8 +6,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from backend.config import CUSTOM_TAF_PATH
 from backend.http_headers import content_disposition_attachment
+from backend.path_utils import resolve_project_dir
 
 router = APIRouter(prefix="/api/label", tags=["label"])
 
@@ -30,7 +30,7 @@ class LabelRequest(BaseModel):
 
 @router.post("/generate")
 async def generate_label(request: LabelRequest):
-    project_dir = CUSTOM_TAF_PATH / request.project_id
+    project_dir = resolve_project_dir(request.project_id)
     if not project_dir.exists():
         raise HTTPException(404, "Project not found")
 
@@ -53,7 +53,7 @@ async def generate_label(request: LabelRequest):
 
 @router.get("/preview/{project_id:path}")
 async def preview_label(project_id: str):
-    pdf_file = CUSTOM_TAF_PATH / project_id / "label.pdf"
+    pdf_file = resolve_project_dir(project_id) / "label.pdf"
     if not pdf_file.exists():
         raise HTTPException(404, "Label not found, generate first")
 
