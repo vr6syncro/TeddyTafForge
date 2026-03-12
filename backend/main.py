@@ -12,7 +12,7 @@ setup_logging()
 app = FastAPI(
     title="TafForge",
     description="Custom Tonie TAF Builder",
-    version="0.2.1",
+    version="0.2.2",
 )
 
 app.include_router(files.router)
