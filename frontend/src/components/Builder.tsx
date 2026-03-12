@@ -12,6 +12,7 @@ import {
   Select,
   Space,
   Switch,
+  Tag,
   Typography,
   Upload,
   message,
@@ -87,6 +88,11 @@ const responsiveGridStyle = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
   gap: 12,
+} as const;
+const statusGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 10,
 } as const;
 
 const Builder = ({ uiLanguage }: BuilderProps) => {
@@ -625,6 +631,35 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
   const tracksForLabel = formData.chapters.map((ch) => ch.title).filter(Boolean);
   const canUseYoutubeSingleSource =
     formData.inputMode === "yt-single" || formData.inputMode === "yt-splitter" || formData.inputMode === "yt-auto";
+  const youtubeUrlReady = Boolean(youtubeUrl.trim());
+  const youtubeInfoReady = Boolean(youtubeInfo);
+  const youtubeSourceReady = Boolean(youtubeProjectId && youtubeSourceFile);
+  const youtubeStatusItems = [
+    {
+      label: text.builder.youtube.status.url,
+      ready: youtubeUrlReady,
+      busy: false,
+      detail: youtubeUrlReady ? youtubeUrl.trim() : text.builder.youtube.status.pendingDetail,
+    },
+    {
+      label: text.builder.youtube.status.info,
+      ready: youtubeInfoReady,
+      busy: youtubeLoading && !youtubeSourceReady,
+      detail: youtubeInfo?.title || text.builder.youtube.status.infoPending,
+    },
+    {
+      label: text.builder.youtube.status.source,
+      ready: youtubeSourceReady,
+      busy: youtubeLoading && youtubeUrlReady,
+      detail: youtubeSourceFile || text.builder.youtube.status.sourcePending,
+    },
+    {
+      label: text.builder.youtube.status.cover,
+      ready: youtubeAutoCover,
+      busy: youtubeThumbLoading,
+      detail: youtubeAutoCover ? text.builder.youtube.status.coverAuto : text.builder.youtube.status.coverManual,
+    },
+  ];
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -693,7 +728,7 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
 
       <Card title={text.builder.cards.source}>
         <Form layout="vertical">
-          <Form.Item label={text.builder.youtube.enable}>
+              <Form.Item label={text.builder.youtube.enable}>
             <Space>
               <Switch
                 checked={youtubeEnabled}
@@ -800,6 +835,97 @@ const Builder = ({ uiLanguage }: BuilderProps) => {
                   </Text>
                 </Space>
               </Form.Item>
+              <Card size="small" title={text.builder.cards.sourceStatus}>
+                <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {youtubeStatusItems.map((item) => (
+                      <Tag
+                        key={item.label}
+                        color={item.busy ? "processing" : item.ready ? "success" : "default"}
+                        style={{ marginInlineEnd: 0 }}
+                      >
+                        {item.label}: {item.busy ? text.builder.youtube.status.busy : item.ready ? text.builder.youtube.status.ready : text.builder.youtube.status.pending}
+                      </Tag>
+                    ))}
+                  </div>
+                  <div style={statusGridStyle}>
+                    {youtubeStatusItems.map((item) => (
+                      <div
+                        key={`${item.label}-detail`}
+                        style={{
+                          border: "1px solid rgba(148, 163, 184, 0.25)",
+                          borderRadius: 10,
+                          padding: "10px 12px",
+                          background: "rgba(148, 163, 184, 0.08)",
+                        }}
+                      >
+                        <Text type="secondary" style={{ display: "block", marginBottom: 4 }}>
+                          {item.label}
+                        </Text>
+                        <Text style={{ wordBreak: "break-word" }}>{item.detail}</Text>
+                      </div>
+                    ))}
+                    <div
+                      style={{
+                        border: "1px solid rgba(148, 163, 184, 0.25)",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                        background: "rgba(148, 163, 184, 0.08)",
+                      }}
+                    >
+                      <Text type="secondary" style={{ display: "block", marginBottom: 4 }}>
+                        {text.builder.youtube.status.project}
+                      </Text>
+                      <Text style={{ wordBreak: "break-word" }}>
+                        {youtubeProjectId || text.builder.youtube.status.pendingDetail}
+                      </Text>
+                    </div>
+                    <div
+                      style={{
+                        border: "1px solid rgba(148, 163, 184, 0.25)",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                        background: "rgba(148, 163, 184, 0.08)",
+                      }}
+                    >
+                      <Text type="secondary" style={{ display: "block", marginBottom: 4 }}>
+                        {text.builder.youtube.status.provider}
+                      </Text>
+                      <Text>{youtubeInfo?.provider || text.builder.youtube.status.pendingDetail}</Text>
+                    </div>
+                    <div
+                      style={{
+                        border: "1px solid rgba(148, 163, 184, 0.25)",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                        background: "rgba(148, 163, 184, 0.08)",
+                      }}
+                    >
+                      <Text type="secondary" style={{ display: "block", marginBottom: 4 }}>
+                        {text.builder.youtube.status.duration}
+                      </Text>
+                      <Text>
+                        {youtubeInfo ? secondsToTimestamp(youtubeInfo.duration) : text.builder.youtube.status.pendingDetail}
+                      </Text>
+                    </div>
+                    <div
+                      style={{
+                        border: "1px solid rgba(148, 163, 184, 0.25)",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                        background: "rgba(148, 163, 184, 0.08)",
+                      }}
+                    >
+                      <Text type="secondary" style={{ display: "block", marginBottom: 4 }}>
+                        {text.builder.youtube.status.chapters}
+                      </Text>
+                      <Text>
+                        {youtubeInfo ? String(youtubeInfo.chapters.length) : text.builder.youtube.status.pendingDetail}
+                      </Text>
+                    </div>
+                  </div>
+                </Space>
+              </Card>
               {youtubeInfo && (
                 <Text type="secondary">
                   {text.builder.youtube.providerInfo(
