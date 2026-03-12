@@ -248,15 +248,15 @@ python -m compileall backend
 ## Technologie
 
 - **Frontend**: React 19, TypeScript, Vite, Ant Design (Dark Theme)
-- **Backend**: Python 3.12, FastAPI, uvicorn
+- **Backend**: Python 3.13, FastAPI, uvicorn
 - **Audio**: FFmpeg + libopus
 - **TAF**: Toolbox-naher Encoderpfad mit Protobuf-Header und OGG-Repacking (4K-Block-Alignment)
 - **Label**: reportlab (PDF-Generierung)
-- **Container**: Multi-Stage Docker Build (Node 22 Alpine + Python 3.12 slim)
+- **Container**: Multi-Stage Docker Build (Node 24 Alpine + Python 3.13 slim)
 
 ## GitHub Automation
 
-- **CI**: Frontend-Build und Backend-Compile-Checks auf `main` und `fix/**`
+- **CI**: Frontend-Build und Backend-Compile-Checks auf `main`, `fix/**`, `upgrade/**`, `feat/**` und `test/**`
 - **Dependabot**: Updates fuer GitHub Actions, Docker, Python und Frontend-NPM
 - **Security**: Trivy-Scan (Vulns, Secrets, Config) plus GitHub Dependency Review auf PRs
 
