@@ -1,6 +1,6 @@
 services:
   teddycloud:
-    image: ghcr.io/toniebox-reverse-engineering/teddycloud:latest
+    image: ${TEDDYCLOUD_IMAGE:-ghcr.io/toniebox-reverse-engineering/teddycloud:latest}
     container_name: teddycloud
     ports:
       - "80:80"
@@ -14,7 +14,7 @@ services:
     restart: unless-stopped
 
   teddytafforge:
-    image: ghcr.io/vr6syncro/teddytafforge:latest
+    image: ${IMAGE_PREFIX:-ghcr.io/vr6syncro/teddytafforge}:${IMAGE_TAG:-latest}
     # Zum selber bauen statt Pull: auskommentieren und 'build: .' einkommentieren
     # build: .
     container_name: teddytafforge

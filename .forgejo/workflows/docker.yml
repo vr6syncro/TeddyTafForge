@@ -1,0 +1,104 @@
+name: Build & Push Docker Image
+
+on:
+  push:
+    branches: [main, "fix/**", "upgrade/**", "feat/**", "test/**"]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: https://code.forgejo.org/actions/checkout@v4
+
+      - name: Bootstrap
+        run: apt-get update -qq && apt-get install -y -q curl git jq
+
+      - name: Resolve registry target
+        id: registry
+        run: |
+          SERVER_URL="${{ github.server_url }}"
+          HOST="${SERVER_URL#https://}"
+          HOST="${HOST#http://}"
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          if [ "$HOST" = "github.com" ]; then
+            REGISTRY="ghcr.io"
+          else
+            REGISTRY="$HOST"
+          fi
+          echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/${OWNER}/${REPO}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to container registry
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "${{ secrets.CR_TOKEN }}" | docker login "${{ steps.registry.outputs.registry }}" \
+            --username "${{ github.actor }}" \
+            --password-stdin
+
+      - name: Compute image tags
+        id: meta
+        run: |
+          IMAGE="${{ steps.registry.outputs.image }}"
+          REF="${{ github.ref }}"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:7}"
+          TAGS=""
+
+          # Branch name tag
+          if [[ "$REF" == refs/heads/* ]]; then
+            BRANCH="${REF#refs/heads/}"
+            BRANCH_TAG="${BRANCH//\//-}"
+            TAGS="$TAGS ${IMAGE}:${BRANCH_TAG}"
+            # latest for default branch
+            if [[ "$BRANCH" == "main" ]]; then
+              TAGS="$TAGS ${IMAGE}:latest"
+            fi
+          fi
+
+          # Semver tags
+          if [[ "$REF" == refs/tags/v* ]]; then
+            VERSION="${REF#refs/tags/v}"
+            MAJOR_MINOR="${VERSION%.*}"
+            TAGS="$TAGS ${IMAGE}:${VERSION} ${IMAGE}:${MAJOR_MINOR}"
+          fi
+
+          # SHA tag
+          TAGS="$TAGS ${IMAGE}:${SHORT_SHA}"
+
+          # Deduplicate and format as comma-separated for buildx
+          TAGS_CSV=$(echo "$TAGS" | tr ' ' '\n' | grep -v '^$' | sort -u | paste -sd ',' -)
+          echo "tags=${TAGS_CSV}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        run: |
+          PUSH="${{ github.event_name != 'pull_request' }}"
+          TAGS="${{ steps.meta.outputs.tags }}"
+          BUILD_ARGS=""
+          for t in $(echo "$TAGS" | tr ',' ' '); do
+            BUILD_ARGS="$BUILD_ARGS -t $t"
+          done
+          docker build \
+            --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.title=${{ github.event.repository.name }}" \
+            $BUILD_ARGS .
+          if [ "$PUSH" = "true" ]; then
+            for t in $(echo "$TAGS" | tr ',' ' '); do
+              docker push "$t"
+            done
+          fi
