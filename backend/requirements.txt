@@ -1,6 +1,6 @@
 fastapi==0.135.1
 uvicorn[standard]==0.41.0
-python-multipart==0.0.22
+python-multipart==0.0.26
 aiofiles==25.1.0
 httpx==0.28.1
 reportlab==4.4.10
