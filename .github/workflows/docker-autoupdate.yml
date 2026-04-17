@@ -2,7 +2,8 @@ name: Docker Autoupdate (yt-dlp)
 
 on:
   schedule:
-    - cron: "17 4 * * *"
+    # Alle 5 Tage prüfen ob neue yt-dlp Version verfügbar (war täglich – spart ~80% der scheduled Runs; bei einem echten Release greift workflow_dispatch sofort)
+    - cron: "17 4 */5 * *"
   workflow_dispatch:
 
 env:
@@ -33,16 +34,6 @@ jobs:
           version=$(gh release view --repo yt-dlp/yt-dlp --json tagName -q '.tagName | ltrimstr("v")')
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Check if version tag already exists
         id: check
         run: |
@@ -52,6 +43,18 @@ jobs:
           else
             echo "build_needed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Set up Docker Buildx
+        if: steps.check.outputs.build_needed == 'true'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        if: steps.check.outputs.build_needed == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
         if: steps.check.outputs.build_needed == 'true'
