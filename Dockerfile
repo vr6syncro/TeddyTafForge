@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # === Production Image ===
-FROM python:3.13-slim
+FROM python:3.14-slim
 WORKDIR /app
 
 ARG YTDLP_VERSION=latest
